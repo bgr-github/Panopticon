@@ -1,0 +1,53 @@
+# A honeypot persona: one coherent fictional machine.
+# Every command that describes the host reads from this file, so the
+# machine's story stays consistent by construction. To make a new
+# persona, copy this file and edit it — no code changes needed.
+
+profile_name: ubuntu-web
+
+host:
+  hostname: web-01
+  # Harvest these from `uname -a` on the real VM you're mimicking.
+  # They must agree with each other and with fakefs/etc/os-release.
+  kernel_name: Linux
+  kernel_release: 5.15.0-91-generic
+  kernel_version: "#101-Ubuntu SMP Tue Nov 14 18:35:29 UTC 2023"
+  machine: x86_64
+  os: GNU/Linux
+
+os_release:                     # what /etc/os-release and distro checks report
+  pretty_name: "Ubuntu 22.04.3 LTS"
+  name: Ubuntu
+  version_id: "22.04"
+  id: ubuntu
+
+# Accounts that can log in. Password is plaintext for authoring convenience.
+# An empty password means the account logs in without one.
+# uid/gid feed the `id` command; these users should also appear in
+# fakefs/etc/passwd so the filesystem agrees with the login accounts.
+accounts:
+  - username: guest
+    password: ""
+    uid: 1001
+    gid: 1001
+    home: /home/guest
+    shell: /bin/bash
+  - username: admin
+    password: admin
+    uid: 1000
+    gid: 1000
+    home: /home/admin
+    shell: /bin/bash
+
+filesystem:
+  # Path (relative to project root) to the curated fake filesystem tree.
+  # Files here are loaded into memory at startup; the running honeypot
+  # never touches real disk in response to attacker input.
+  root: fakefs/ubuntu-web
+
+banner: |
+  Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)
+
+   * Documentation:  https://help.ubuntu.com
+   * Management:     https://landscape.canonical.com
+   * Support:        https://ubuntu.com/advantage
