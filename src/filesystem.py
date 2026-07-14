@@ -27,6 +27,26 @@ class FakeFS:
                 stack.append(part)
         return "/" + "/".join(stack)
 
+    def write_file(self, abspath, content):
+        """Create or overwrite file at abspath. True on success"""
+
+        parts = [p for p in abspath.split("/") if p]
+        if not parts:
+            return False
+        *parent_parts, filename = parts
+
+        node = self._tree
+        for part in parent_parts:
+            if not isinstance(node, dict) or part not in node:
+                return False  # parent path doesn't exist
+            node = node[part]
+
+        if not isinstance(node, dict):  # parent is a file
+            return False
+
+        node[filename] = content
+        return True
+
     def exists(self, abspath):
         """Returns True if something exists"""
         return self._node(abspath) is not None
