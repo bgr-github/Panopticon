@@ -43,7 +43,7 @@ filesystem:
   # Path (relative to project root) to the curated fake filesystem tree.
   # Files here are loaded into memory at startup; the running honeypot
   # never touches real disk in response to attacker input.
-  root: fakefs/ubuntu-web
+  root: filesystem/ubuntu-web
 
 banner: |
   Welcome to Ubuntu 22.04.3 LTS (GNU/Linux 5.15.0-91-generic x86_64)

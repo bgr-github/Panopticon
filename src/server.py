@@ -9,6 +9,7 @@ from pathlib import Path
 from logger import log_event, setup_logging
 from config import load_profile, ConfigError
 from command_handler import CommandHandler
+from filesystem import load_filesystem
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -58,8 +59,9 @@ async def handle_client(process):
 
 
 class PanopticonServer(asyncssh.SSHServer):
-    def __init__(self, profile):
+    def __init__(self, profile, fs):
         self.profile = profile
+        self.fs = fs
 
     def connection_made(self, connection):
         """
@@ -76,6 +78,7 @@ class PanopticonServer(asyncssh.SSHServer):
         # Binds the session and profile to the connection and allows us to use it in handle_client()
         connection.set_extra_info(session=self.session)
         connection.set_extra_info(profile=self.profile)
+        connection.set_extra_info(fs=self.fs)
 
         self.start_time = time.monotonic()
 
@@ -140,8 +143,10 @@ class PanopticonServer(asyncssh.SSHServer):
 async def main(args):
     setup_logging()
     profile = load_profile(args.profile)
+    fs_tree = load_filesystem(BASE_DIR / profile["filesystem"]["root"])
+    print(fs_tree)
     await asyncssh.create_server(
-        lambda: PanopticonServer(profile),
+        lambda: PanopticonServer(profile, fs),
         args.host,
         args.port,
         server_host_keys=[args.key],
