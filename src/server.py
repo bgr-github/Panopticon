@@ -144,9 +144,8 @@ async def main(args):
     setup_logging()
     profile = load_profile(args.profile)
     fs_tree = load_filesystem(BASE_DIR / profile["filesystem"]["root"])
-    print(fs_tree)
     await asyncssh.create_server(
-        lambda: PanopticonServer(profile, fs),
+        lambda: PanopticonServer(profile, fs_tree),
         args.host,
         args.port,
         server_host_keys=[args.key],

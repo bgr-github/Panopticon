@@ -1,7 +1,9 @@
+import copy
 import importlib
 import pkgutil
 import commands
 from logger import log_event
+from filesystem import FakeFS
 
 
 def load_commands():
@@ -34,6 +36,8 @@ class CommandHandler:
         self.process = process
         self.session = process.get_extra_info("session")
         self.profile = process.get_extra_info("profile")
+        self.session["fs"] = FakeFS(copy.deepcopy(process.get_extra_info("fs")))
+        self.session["cwd"] = f"/home/{self.session.get('username', 'guest')}"
 
         self.registry = load_commands()
 
@@ -59,6 +63,9 @@ class CommandHandler:
                 output = entry["fn"](args, self.session) or ""
             except Exception:
                 output = ""
+                import traceback
+
+                traceback.print_exc()
                 log_event("command_error", session=self.session["id"], command=cmd)
 
         if output and not output.endswith("\n"):
