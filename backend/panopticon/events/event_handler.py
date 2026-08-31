@@ -1,0 +1,40 @@
+import asyncio
+from redis.asyncio import Redis
+from panopticon.events.models import BaseEvent
+from panopticon.config.settings import settings
+from panopticon.config.types import ModuleType
+from panopticon.observability.logging import logger
+
+
+class EventHandler:
+
+    redis: Redis
+
+    def __init__(self):
+        self.redis = Redis.from_url(str(settings.redis.dsn), db=0)
+
+    async def publish(self, event: BaseEvent) -> str:
+        """Asynchronously pushes the event to the redis stream."""
+
+        message_id = await self.redis.xadd(
+            settings.redis.stream_name,
+            {
+                "event": event.model_dump_json(),
+            },
+        )
+
+        logger.debug(ModuleType.event_handler, f"Event Published: {event.model_dump_json()}")
+
+        return message_id.decode() if isinstance(message_id, bytes) else str(message_id)
+
+    def publish_background(self, event: BaseEvent) -> None:
+        """pushes the event to the redis stream in the background"""
+
+        task = asyncio.create_task(self.publish(event))
+        task.add_done_callback(self._publish_callback)
+
+    def _publish_callback(self, task: asyncio.Task[str]) -> None:
+        try:
+            task.result()
+        except Exception as e:
+            logger.error(ModuleType.event_handler, f"Failed to publish event: {e}")
