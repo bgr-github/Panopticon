@@ -2,7 +2,6 @@ import asyncio
 from redis.asyncio import Redis
 from panopticon.events.models import BaseEvent
 from panopticon.config.settings import settings
-from panopticon.config.types import ModuleType
 from panopticon.observability.logging import logger
 
 
@@ -23,7 +22,7 @@ class EventHandler:
             },
         )
 
-        logger.debug(ModuleType.event_handler, f"Event Published: {event.model_dump_json()}")
+        logger.debug("Event Handler", f"Event Published: {event.model_dump_json()}")
 
         return message_id.decode() if isinstance(message_id, bytes) else str(message_id)
 
@@ -37,4 +36,4 @@ class EventHandler:
         try:
             task.result()
         except Exception as e:
-            logger.error(ModuleType.event_handler, f"Failed to publish event: {e}")
+            logger.error("Event Handler", f"Failed to publish event: {e}")

@@ -6,7 +6,6 @@ from asyncssh.constants import OPEN_CONNECT_FAILED
 from uuid import uuid4
 from panopticon.config.settings import settings
 from panopticon.observability import logger
-from panopticon.config.types import ModuleType
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionOpen, ConnectionClosed, LoginAttempt
 from panopticon.honeypots.ssh.shell import ShellSession
@@ -63,7 +62,7 @@ class SSHServer(asyncssh.SSHServer):
                 )
             )
         else:
-            logger.warning(ModuleType.ssh, "connection_lost() callback error: could not publish event.")
+            logger.warning("SSH", "connection_lost() callback error: could not publish event.")
 
     def begin_auth(self, username: str) -> bool:
         """Do we want this user to try to authenticate?"""
@@ -96,13 +95,13 @@ class SSHServer(asyncssh.SSHServer):
                 )
             )
         else:
-            logger.warning(ModuleType.ssh, "validate_password() callback error: could not publish event.")
+            logger.warning("SSH", "validate_password() callback error: could not publish event.")
 
         return success
 
     def session_requested(self) -> ShellSession:
         if self.session is None:
-            logger.error(ModuleType.ssh, "Session requested without session set.")
+            logger.error("SSH", "Session requested without session set.")
             raise asyncssh.ChannelOpenError(OPEN_CONNECT_FAILED, "Session has not been initialised")
 
         return ShellSession(event_handler=self.event_handler, session=self.session, conn=self.conn)
@@ -118,11 +117,11 @@ async def main() -> None:
             port=settings.ssh.port,
             server_host_keys=settings.ssh.host_key_path,
         )
-        logger.info(ModuleType.ssh, f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
+        logger.info("SSH", f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
 
         await asyncio.Future()
     except asyncssh.Error as e:
-        logger.error(ModuleType.ssh, "Server crashed.")
+        logger.error("SSH", "Server crashed.")
 
 
 if __name__ == "__main__":
