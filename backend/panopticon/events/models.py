@@ -10,6 +10,7 @@ class EventType(str, Enum):
     connection_closed = "connection_closed"
     login_attempt = "login_attempt"
     command = "command"
+    file_download = "file_download"
 
 
 # Event Types
@@ -45,3 +46,10 @@ class LoginAttempt(BaseEvent):
 class Command(BaseEvent):
     event_type: EventType = EventType.command
     input: str
+
+
+class FileDownload(Command):
+    event_type: EventType = EventType.file_download
+    tool: str
+    url: str | None
+    destination: str | None

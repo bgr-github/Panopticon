@@ -2,7 +2,6 @@ import asyncssh
 from panopticon.honeypots.ssh.context import SSHSessionContext
 from panopticon.honeypots.ssh.command_handler import CommandHandler
 from panopticon.events.event_handler import EventHandler
-from panopticon.events.models import Command
 from panopticon.observability.logging import logger
 from panopticon.config.constants import Module
 
@@ -22,7 +21,7 @@ class ShellSession(asyncssh.SSHServerSession):
         self.event_handler = event_handler
         self.conn = conn
 
-        self.handler = CommandHandler(conn, session)
+        self.handler = CommandHandler(conn, session, event_handler)
 
     def connection_made(self, chan: asyncssh.SSHServerChannel) -> None:
         """Called as soon as a connection is made to the shell session"""
@@ -49,15 +48,6 @@ class ShellSession(asyncssh.SSHServerSession):
         if not command:
             self.chan.write("$> ")
             return
-
-        self.event_handler.publish_background(
-            Command(
-                session_id=self.session.id,
-                src_ip=self.session.src_ip,
-                src_port=self.session.src_port,
-                input=command,
-            )
-        )
 
         output: str = ""
 
