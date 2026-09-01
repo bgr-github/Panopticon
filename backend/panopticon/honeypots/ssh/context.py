@@ -6,7 +6,7 @@ from panopticon.events.event_handler import EventHandler
 
 @dataclass
 class SSHSessionContext:
-    """Context manager for each client"""
+    """Context manager for each client connection"""
 
     id: str
     src_ip: str
@@ -28,6 +28,8 @@ class SSHCommandContext:
     event_handler: EventHandler
 
     def emit(self, event_type, **payload) -> None:
+        """Publish specialist events such as FileDownloaded etc..."""
+
         self.event_handler.publish_background(
             event_type(
                 session_id=self.session.id,
@@ -40,6 +42,8 @@ class SSHCommandContext:
 
 @dataclass
 class CommandEntry:
+    """Context manager for command modules"""
+
     name: str
     man: str | None
     fn: Callable[[SSHCommandContext], str]

@@ -1,6 +1,4 @@
 import asyncio
-import json
-from pydantic import ValidationError
 from panopticon.events.models import BaseEvent
 from panopticon.config.constants import Module
 from panopticon.observability.logging import logger
@@ -19,10 +17,14 @@ class IngestionWorker:
 
         logger.info(Module.INGESTION, "Ingestion worker started.")
 
-    def store_in_database(self, event: BaseEvent):
+    def store_in_database(self, event: BaseEvent) -> None:
+        """Wrapper for Database.store_event()"""
+
         self.database.store_event(event)
 
     async def close(self) -> None:
+        """Shut down redis and postgresql database"""
+
         await self.redis.close()
         self.database.close()
 
@@ -53,8 +55,6 @@ async def main() -> None:
                 logger.exception(Module.INGESTION, "Failed to ingest")
                 await asyncio.sleep(1)
     finally:
-
-        # Graceful shutdown
         logger.info(Module.INGESTION, "Worker shutting down...")
         await worker.close()
 

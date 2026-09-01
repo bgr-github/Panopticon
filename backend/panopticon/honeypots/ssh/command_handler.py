@@ -1,7 +1,5 @@
 import importlib
 import pkgutil
-from collections.abc import Callable
-from typing import cast, Any
 import panopticon.honeypots.ssh.commands as commands
 from asyncssh import SSHServerChannel, SSHServerConnection
 from panopticon.honeypots.ssh.context import SSHSessionContext, SSHCommandContext, CommandEntry
@@ -10,6 +8,8 @@ from panopticon.events.models import Command
 
 
 def load_commands() -> dict[str, CommandEntry]:
+    """Loads all modules in commands/ into a registry"""
+
     _registry: dict[str, CommandEntry] = {}
 
     for _, module_name, _ in pkgutil.iter_modules(commands.__path__):
@@ -70,21 +70,20 @@ class CommandHandler:
             output.extend(f"  {command_name}" for command_name in sorted(registry))
             return "\r\n".join(output)
 
-        else:
-            entry: CommandEntry | None = registry.get(name, None)
+        entry: CommandEntry | None = registry.get(name, None)
 
-            if entry is None:
-                output = f"{name}: command not found"
-                self.event_handler.publish_background(
-                    Command(
-                        session_id=self.session.id,
-                        src_ip=self.session.src_ip,
-                        src_port=self.session.src_port,
-                        input=command,
-                    )
+        if entry is None:
+            output = f"{name}: command not found"
+            self.event_handler.publish_background(
+                Command(
+                    session_id=self.session.id,
+                    src_ip=self.session.src_ip,
+                    src_port=self.session.src_port,
+                    input=command,
                 )
-            else:
-                output = entry.fn(context) or ""
+            )
+        else:
+            output = entry.fn(context) or ""
 
         if output and not output.endswith(("\n", "\r")):
             output += "\r\n"

@@ -3,8 +3,7 @@ from typing import cast
 from panopticon.config.settings import settings
 from panopticon.events.models import BaseEvent
 
-# please ignore.
-# ugly local types as pylance keeps crying
+# Types for Pylance as Redis async doesnt have best Typing
 RedisStreamMessage = tuple[str, dict[str, str]]
 RedisStreamBatch = list[tuple[str, list[RedisStreamMessage]]]
 
@@ -35,8 +34,8 @@ class RedisClient:
         return str(message_id)
 
     async def read_batch(self, batch_size: int, wait_time_ms: int) -> list[str]:
+        """Retrieve event data from redis stream"""
 
-        # Pylance keeps flagging a warning if type isnt cast to the ugly local type above
         event_batch = cast(
             RedisStreamBatch,
             await self.redis.xread(
@@ -57,4 +56,6 @@ class RedisClient:
         return events
 
     async def close(self) -> None:
+        """Gracefuly close connection"""
+
         await self.redis.aclose()

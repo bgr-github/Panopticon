@@ -56,15 +56,7 @@ class ShellSession(asyncssh.SSHServerSession):
             if output:
                 self.chan.write(output)
 
-            if not self.channel_closed():
-                self.chan.write("$> ")
         except Exception as e:
             logger.exception(Module.SSH, "Shell error")
-            self.chan.write("$> ")
 
-    def channel_closed(self) -> bool:
-        is_closing = getattr(self.chan, "is_closing", None)
-        if callable(is_closing):
-            return bool(is_closing())
-
-        return bool(getattr(self.chan, "closed", False))
+        self.chan.write("$> ")
