@@ -1,104 +1,68 @@
 import asyncio
-import psycopg
 import json
-from typing import cast
-from redis.asyncio import Redis
-from panopticon.config.settings import settings
-from panopticon.config.constants import COMMON_FIELDS
+from pydantic import ValidationError
+from panopticon.events.models import BaseEvent
+from panopticon.config.constants import Module
 from panopticon.observability.logging import logger
-
-# please ignore.
-# ugly local types as pylance keeps crying
-RedisStreamMessage = tuple[str, dict[str, str]]
-RedisStreamBatch = list[tuple[str, list[RedisStreamMessage]]]
+from panopticon.adapters.redis import RedisClient
+from panopticon.adapters.postgres import Database, InvalidEventError
 
 
 class IngestionWorker:
 
-    redis: Redis
-    last_id: str
+    redis: RedisClient
+    database: Database
 
     def __init__(self) -> None:
-        self.redis = Redis.from_url(
-            str(settings.redis.dsn),
-            db=0,
-            decode_responses=True,
-            socket_timeout=None,
-        )
-        self.db = psycopg.connect(settings.database.dsn)
-        self.last_id = "$"
+        self.redis = RedisClient()
+        self.database = Database()
 
-    async def read_batch(self) -> list[str]:
-        """Read events from the Redis stream"""
+        logger.info(Module.INGESTION, "Ingestion worker started.")
 
-        # Pylance keeps flagging a warning if type isnt cast to the ugly local tpye above
-        event_batch = cast(
-            RedisStreamBatch,
-            await self.redis.xread(
-                streams={settings.redis.stream_name: self.last_id},
-                count=10,  # 10 events
-                block=5000,  # check every 5 seconds
-            ),
-        )
+    def store_in_database(self, event: BaseEvent):
+        self.database.store_event(event)
 
-        events: list[str] = []
-
-        # Adds raw event json to event list
-        for _, messages in event_batch:
-            for message_id, fields in messages:
-                self.last_id = message_id
-                events.append(fields["event"])
-
-        return events
-
-    def store_db(self, event: str) -> None:
-        sql: str = (
-            """INSERT INTO events (event_id, session_id, event_type, src_ip, src_port, timestamp, payload) VALUES (%s, %s, %s, %s, %s, %s, %s)"""
-        )
-
-        current_event: dict = json.loads(event)
-        payload: dict = {key: value for key, value in current_event.items() if key not in COMMON_FIELDS}
-
-        with self.db.cursor() as cursor:
-            cursor.execute(
-                sql,
-                (
-                    current_event["id"],
-                    current_event["session_id"],
-                    current_event["event_type"],
-                    current_event["src_ip"],
-                    current_event["src_port"],
-                    current_event["timestamp"],
-                    json.dumps(payload),
-                ),
-            )
-
-        self.db.commit()
+    async def close(self) -> None:
+        await self.redis.close()
+        self.database.close()
 
 
 async def main() -> None:
     worker: IngestionWorker = IngestionWorker()
-    logger.info("Ingestion", "Ingestion worker started.")
 
     # Main ingestion loop
-    while True:
-        try:
-            events = await worker.read_batch()
+    try:
+        while True:
+            try:
+                events = await worker.redis.read_batch(batch_size=100, wait_time_ms=5000)
 
-            if not events:
-                continue
+                # Continue if no events are found
+                if not events:
+                    continue
 
-            for event in events:
-                worker.store_db(event)
+                # Loop events if they are
+                for raw_event in events:
+                    event = worker.database.validate_event(raw_event)
+                    if event is not None:
+                        worker.database.store_event(event)
+                    else:
+                        logger.error(Module.INGESTION, "Error validating event")
+                        raise InvalidEventError
 
-            logger.debug("Ingestion", f"Read {len(events)} from redis")
-        except Exception as e:
-            logger.error("Ingestion", f"Ingestion error: {e}")
-            await asyncio.sleep(1)
+            except Exception as e:
+                logger.exception(Module.INGESTION, "Failed to ingest")
+                await asyncio.sleep(1)
+    finally:
+
+        # Graceful shutdown
+        logger.info(Module.INGESTION, "Worker shutting down...")
+        await worker.close()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except Exception as e:
-        logger.error("Ingestion", "Error running ingestion service")
+        logger.exception(Module.INGESTION, "Unknown error occured.")
+    except KeyboardInterrupt:
+        logger.info(Module.INGESTION, "Shutting down...")

@@ -2,6 +2,7 @@ import logging
 import sys
 from pathlib import Path
 from panopticon.config.settings import settings
+from panopticon.config.constants import Module
 
 
 class Logger:
@@ -41,17 +42,20 @@ class Logger:
                 self.logger.addHandler(stream_handler)
 
     # Logger.<level>() rather than Logger.logger.<level>()
-    def info(self, module: str, message: str):
+    def info(self, module: Module, message: str) -> None:
         self.logger.info(f"[{module}]: {message}")
 
-    def warning(self, module: str, message: str):
+    def warning(self, module: Module, message: str) -> None:
         self.logger.warning(f"[{module}]: {message}")
 
-    def error(self, module: str, message: str):
+    def error(self, module: Module, message: str) -> None:
         self.logger.error(f"[{module}]: {message}")
 
-    def debug(self, module: str, message: str):
+    def debug(self, module: Module, message: str) -> None:
         self.logger.debug(f"[{module}]: {message}")
+
+    def exception(self, module: Module, message: str) -> None:
+        self.logger.exception(f"[{module}]: {message}")
 
 
 logger: Logger

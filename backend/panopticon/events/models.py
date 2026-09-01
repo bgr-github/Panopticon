@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from uuid import UUID, uuid4
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 # Enums
@@ -16,8 +16,10 @@ class EventType(str, Enum):
 class BaseEvent(BaseModel):
     """Every event on any type of honeypot will have these fields"""
 
+    model_config = ConfigDict(extra="allow")
+
     id: UUID = Field(default_factory=uuid4)
-    timestamp: datetime = Field(default_factory=datetime.now)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     session_id: str
     src_ip: str
     src_port: int

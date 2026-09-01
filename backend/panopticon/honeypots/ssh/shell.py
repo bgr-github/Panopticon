@@ -3,6 +3,8 @@ from panopticon.honeypots.ssh.context import SSHSessionContext
 from panopticon.honeypots.ssh.command_handler import CommandHandler
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import Command
+from panopticon.observability.logging import logger
+from panopticon.config.constants import Module
 
 
 class ShellSession(asyncssh.SSHServerSession):
@@ -50,18 +52,24 @@ class ShellSession(asyncssh.SSHServerSession):
 
         self.event_handler.publish_background(
             Command(
-                session_id=self.session._id,
+                session_id=self.session.id,
                 src_ip=self.session.src_ip,
                 src_port=self.session.src_port,
                 input=command,
             )
         )
 
-        output: str = self.handler.handle_input(command)
-        if output:
-            self.chan.write(output)
+        output: str = ""
 
-        if not self.channel_closed():
+        try:
+            output = self.handler.handle_input(command)
+            if output:
+                self.chan.write(output)
+
+            if not self.channel_closed():
+                self.chan.write("$> ")
+        except Exception as e:
+            logger.exception(Module.SSH, "Shell error")
             self.chan.write("$> ")
 
     def channel_closed(self) -> bool:

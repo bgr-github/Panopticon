@@ -1,6 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
-from pydantic import RedisDsn, PostgresDsn, Field
+from pydantic import Field
 from pathlib import Path
 
 BASE_DIR = Path(__file__).parent.parent
@@ -32,7 +31,7 @@ class DatabaseSettings(BaseSettings):
 class SSHHoneypotSettings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = 2222
-    host_key_path: List[Path] = [PROJECT_ROOT / "keys" / "ssh_host_key"]
+    host_key_path: list[Path] = Field(default_factory=lambda: [PROJECT_ROOT / "keys" / "ssh_host_key"])
 
 
 class LoggingSettings(BaseSettings):

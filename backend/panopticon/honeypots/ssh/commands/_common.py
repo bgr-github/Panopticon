@@ -2,7 +2,6 @@ from pathlib import PurePosixPath
 
 from panopticon.honeypots.ssh.context import SSHSessionContext
 
-
 HOSTNAME = "web-prod-01"
 KERNEL = "Linux web-prod-01 5.15.0-91-generic #101-Ubuntu SMP x86_64 GNU/Linux"
 DEFAULT_CWD = "/root"

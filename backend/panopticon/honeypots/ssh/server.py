@@ -1,10 +1,11 @@
 import asyncio
 import asyncssh
 import time
-from typing import Optional, Dict
+from typing import Optional
 from asyncssh.constants import OPEN_CONNECT_FAILED
 from uuid import uuid4
 from panopticon.config.settings import settings
+from panopticon.config.constants import Module
 from panopticon.observability import logger
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionOpen, ConnectionClosed, LoginAttempt
@@ -29,7 +30,7 @@ class SSHServer(asyncssh.SSHServer):
         peername = conn.get_extra_info("peername")
 
         self.session = SSHSessionContext(
-            _id=uuid4().hex[:8],
+            id=uuid4().hex[:8],
             src_ip=peername[0],
             src_port=peername[1],
             start_time=time.monotonic(),
@@ -43,7 +44,7 @@ class SSHServer(asyncssh.SSHServer):
 
         self.event_handler.publish_background(
             ConnectionOpen(
-                session_id=self.session._id,
+                session_id=self.session.id,
                 src_ip=self.session.src_ip,
                 src_port=self.session.src_port,
             )
@@ -55,14 +56,14 @@ class SSHServer(asyncssh.SSHServer):
         if self.session:
             self.event_handler.publish_background(
                 ConnectionClosed(
-                    session_id=self.session._id,
+                    session_id=self.session.id,
                     src_ip=self.session.src_ip,
                     src_port=self.session.src_port,
                     duration_seconds=round(time.monotonic() - self.start_time, 3),
                 )
             )
         else:
-            logger.warning("SSH", "connection_lost() callback error: could not publish event.")
+            logger.warning(Module.SSH, "connection_lost() callback error: could not publish event.")
 
     def begin_auth(self, username: str) -> bool:
         """Whether this client requires authentication or not."""
@@ -86,7 +87,7 @@ class SSHServer(asyncssh.SSHServer):
         if self.session:
             self.event_handler.publish_background(
                 LoginAttempt(
-                    session_id=self.session._id,
+                    session_id=self.session.id,
                     src_ip=self.session.src_ip,
                     src_port=self.session.src_port,
                     username=username,
@@ -95,7 +96,7 @@ class SSHServer(asyncssh.SSHServer):
                 )
             )
         else:
-            logger.warning("SSH", "validate_password() callback error: could not publish event.")
+            logger.warning(Module.SSH, "validate_password() callback error: could not publish event.")
 
         return success
 
@@ -103,7 +104,7 @@ class SSHServer(asyncssh.SSHServer):
         """Called when the client requests a shell session, creates a custom asyncSSH shell object"""
 
         if self.session is None:
-            logger.error("SSH", "Session requested without session set.")
+            logger.error(Module.SSH, "Session requested without session set.")
             raise asyncssh.ChannelOpenError(OPEN_CONNECT_FAILED, "Session has not been initialised")
 
         return ShellSession(event_handler=self.event_handler, session=self.session, conn=self.conn)
@@ -111,25 +112,35 @@ class SSHServer(asyncssh.SSHServer):
 
 async def main() -> None:
     event_handler: EventHandler = EventHandler()
+    server: asyncssh.SSHAcceptor | None = None
 
     try:
-        await asyncssh.create_server(
+        server = await asyncssh.create_server(
             server_factory=lambda: SSHServer(event_handler),
             host=settings.ssh.host,
             port=settings.ssh.port,
             server_host_keys=settings.ssh.host_key_path,
         )
-        logger.info("SSH", f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
+        logger.info(Module.SSH, f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
 
         await asyncio.Future()
+
+    except asyncio.CancelledError:
+        raise
+
     except asyncssh.Error as e:
-        logger.error("SSH", "Server crashed.")
+        logger.exception(Module.SSH, "Error starting server")
+
+    # On shutdown
+    finally:
+        if server is not None:
+            server.close()
+            await server.wait_closed()
+        await event_handler.close()
 
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
-    except (OSError, asyncssh.Error) as e:
-        raise SystemExit
     except KeyboardInterrupt:
         print("Goodbye")

@@ -2,6 +2,10 @@
 
 - Small fake file system in ssh honeypot
 
-- connect ingestor to postgre
+- Make postgre async
+
+- validate ingestion
+
+
 
 - after postgre connect: review code, tidy up. Ensure all is working before controller / api

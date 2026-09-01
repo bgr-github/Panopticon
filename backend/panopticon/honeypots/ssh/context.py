@@ -5,7 +5,7 @@ from dataclasses import dataclass
 class SSHSessionContext:
     """Context manager for each client"""
 
-    _id: str
+    id: str
     src_ip: str
     src_port: int
     start_time: float
