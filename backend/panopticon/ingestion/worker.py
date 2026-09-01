@@ -25,12 +25,13 @@ class IngestionWorker:
     async def read_batch(self) -> list[str]:
         """Read events from the Redis stream"""
 
+        # Pylance keeps flagging a warning if type isnt cast to the ugly local tpye above
         event_batch = cast(
             RedisStreamBatch,
             await self.redis.xread(
                 streams={settings.redis.stream_name: self.last_id},
-                count=10,
-                block=1000,
+                count=10,  # TODO: Blocks of 10 events, change to 100 during prod
+                block=1000,  # TODO: Every 1 second, change to 5 during prod
             ),
         )
 
@@ -56,9 +57,6 @@ async def main() -> None:
                 continue
 
             logger.debug("Ingestion", f"Read {len(events)} from redis")
-
-            for event in events:
-                logger.debug("Ingestion", event)
         except Exception as e:
             logger.error("Ingestion", f"Ingestion error: {e}")
             await asyncio.sleep(1)

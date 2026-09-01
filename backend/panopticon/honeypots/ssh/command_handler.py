@@ -45,12 +45,12 @@ class CommandHandler:
     conn: SSHServerConnection
     session: SSHSessionContext
 
-    def __init__(self, conn: SSHServerConnection, session: SSHSessionContext):
+    def __init__(self, conn: SSHServerConnection, session: SSHSessionContext) -> None:
         self.conn = conn
         self.session = session
 
-    def handle_input(self, command: str):
-        """parses user input from ShellSession().data_reiceived()"""
+    def handle_input(self, command: str) -> str:
+        """Parses user input from ShellSession().data_received()"""
 
         parts = command.split()
 

@@ -14,6 +14,8 @@ class EventType(str, Enum):
 
 # Event Types
 class BaseEvent(BaseModel):
+    """Every event on any type of honeypot will have these fields"""
+
     id: UUID = Field(default_factory=uuid4)
     timestamp: datetime = Field(default_factory=datetime.now)
     session_id: str

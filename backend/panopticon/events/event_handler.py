@@ -10,10 +10,10 @@ class EventHandler:
     redis: Redis
 
     def __init__(self):
-        self.redis = Redis.from_url(str(settings.redis.dsn), db=0)
+        self.redis = Redis.from_url(str(settings.redis.dsn), db=0, decode_responses=True)
 
     async def publish(self, event: BaseEvent) -> str:
-        """Asynchronously pushes the event to the redis stream."""
+        """Asynchronously pushes the event to the redis stream"""
 
         message_id = await self.redis.xadd(
             settings.redis.stream_name,
@@ -27,12 +27,14 @@ class EventHandler:
         return message_id.decode() if isinstance(message_id, bytes) else str(message_id)
 
     def publish_background(self, event: BaseEvent) -> None:
-        """pushes the event to the redis stream in the background"""
+        """Pushes the event to the redis stream in the background"""
 
         task = asyncio.create_task(self.publish(event))
         task.add_done_callback(self._publish_callback)
 
     def _publish_callback(self, task: asyncio.Task[str]) -> None:
+        """Callback to catch any results which failed to publish"""
+
         try:
             task.result()
         except Exception as e:

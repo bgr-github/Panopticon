@@ -19,6 +19,7 @@ class ShellSession(asyncssh.SSHServerSession):
         self.session = session
         self.event_handler = event_handler
         self.conn = conn
+
         self.handler = CommandHandler(conn, session)
 
     def connection_made(self, chan: asyncssh.SSHServerChannel) -> None:
@@ -39,8 +40,10 @@ class ShellSession(asyncssh.SSHServerSession):
 
     def data_received(self, data: str, datatype: object) -> None:
         """Called when data is received by the client"""
-        command = data.strip()
 
+        command: str = data.strip()
+
+        # Show prompt even with empty inputs
         if not command:
             self.chan.write("$> ")
             return
@@ -54,7 +57,7 @@ class ShellSession(asyncssh.SSHServerSession):
             )
         )
 
-        output = self.handler.handle_input(command)
+        output: str = self.handler.handle_input(command)
         if output:
             self.chan.write(output)
 

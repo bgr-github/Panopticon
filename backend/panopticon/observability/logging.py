@@ -27,6 +27,7 @@ class Logger:
         path = file_path or settings.logging.internal_log_path
         path.parent.mkdir(parents=True, exist_ok=True)
 
+        # Ensure handlers do not already exist
         if not self.logger.handlers:
             file_handler = logging.FileHandler(path)
             file_handler.setLevel(level)
@@ -39,7 +40,7 @@ class Logger:
                 stream_handler.setFormatter(formatter)
                 self.logger.addHandler(stream_handler)
 
-    # for semantics
+    # Logger.<level>() rather than Logger.logger.<level>()
     def info(self, module: str, message: str):
         self.logger.info(f"[{module}]: {message}")
 

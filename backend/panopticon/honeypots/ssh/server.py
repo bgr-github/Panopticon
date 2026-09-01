@@ -65,7 +65,7 @@ class SSHServer(asyncssh.SSHServer):
             logger.warning("SSH", "connection_lost() callback error: could not publish event.")
 
     def begin_auth(self, username: str) -> bool:
-        """Do we want this user to try to authenticate?"""
+        """Whether this client requires authentication or not."""
 
         if self.session:
             self.session.username = username
@@ -73,7 +73,7 @@ class SSHServer(asyncssh.SSHServer):
         return True
 
     def password_auth_supported(self) -> bool:
-        """Whether user must input a password"""
+        """Whether user must authetnicate"""
 
         return True
 
@@ -100,6 +100,8 @@ class SSHServer(asyncssh.SSHServer):
         return success
 
     def session_requested(self) -> ShellSession:
+        """Called when the client requests a shell session, creates a custom asyncSSH shell object"""
+
         if self.session is None:
             logger.error("SSH", "Session requested without session set.")
             raise asyncssh.ChannelOpenError(OPEN_CONNECT_FAILED, "Session has not been initialised")
