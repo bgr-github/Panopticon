@@ -1,4 +1,5 @@
 from redis.asyncio import Redis
+from collections.abc import AsyncIterator
 from typing import cast
 from panopticon.config.settings import settings
 from panopticon.events.models import BaseEvent
@@ -33,17 +34,10 @@ class RedisClient:
 
         return str(message_id)
 
-    async def read_batch(self, batch_size: int, wait_time_ms: int) -> list[str]:
+    async def read_batch(self, count: int, block: int) -> list[str]:
         """Retrieve event data from redis stream"""
 
-        event_batch = cast(
-            RedisStreamBatch,
-            await self.redis.xread(
-                streams={settings.redis.stream_name: self.last_id},
-                count=batch_size,
-                block=wait_time_ms,
-            ),
-        )
+        event_batch = await self._xread(self.last_id, count=count, block=block)
 
         events: list[str] = []
 
@@ -54,6 +48,27 @@ class RedisClient:
                 self.last_id = message_id
 
         return events
+
+    async def stream_events(self) -> AsyncIterator[str]:
+        last_id: str = "$"
+
+        while True:
+            event_batch: RedisStreamBatch = await self._xread(last_id, count=10, block=5000)
+
+            for _, messages in event_batch:
+                for message_id, fields in messages:
+                    last_id = message_id
+                    yield fields["event"]
+
+    async def _xread(self, last_id: str, count: int, block: int) -> RedisStreamBatch:
+        return cast(
+            RedisStreamBatch,
+            await self.redis.xread(
+                streams={settings.redis.stream_name: last_id},
+                count=count,
+                block=block,
+            ),
+        )
 
     async def close(self) -> None:
         """Gracefuly close connection"""

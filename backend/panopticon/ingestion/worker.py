@@ -36,7 +36,7 @@ async def main() -> None:
     try:
         while True:
             try:
-                events = await worker.redis.read_batch(batch_size=100, wait_time_ms=5000)
+                events = await worker.redis.read_batch(count=100, block=5000)
 
                 # Continue if no events are found
                 if not events:

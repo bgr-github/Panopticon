@@ -1,5 +1,7 @@
 import psycopg
 import json
+from uuid import UUID
+from psycopg.rows import dict_row
 from pydantic import ValidationError
 from panopticon.config.settings import settings
 from panopticon.config.constants import Module, COMMON_FIELDS
@@ -60,6 +62,42 @@ class Database:
             self.conn.rollback()
             logger.exception(Module.INGESTION, "Failed to insert into database.")
             raise
+
+    def get_event_by_id(self, event_id: str) -> BaseEvent | None:
+        """Gets one event by its ID"""
+
+        sql: str = """
+            SELECT
+                event_id,
+                session_id,
+                event_type,
+                src_ip,
+                src_port,timestamp,
+                payload
+            FROM events WHERE event_id = %s
+                    """
+
+        with self.conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql, (event_id,))
+            row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        event_data: dict[str, str] = {
+            "id": row["event_id"],
+            "session_id": row["session_id"],
+            "event_type": row["event_type"],
+            "src_ip": str(row["src_ip"]),
+            "src_port": row["src_port"],
+            "timestamp": row["timestamp"],
+            **(row["payload"] or {}),
+        }
+
+        try:
+            return BaseEvent.model_validate(event_data)
+        except ValidationError:
+            return None
 
     def validate_event(self, event_json: str) -> BaseEvent | None:
         """Compares the json string to Pydantic model to ensure json integrity"""
