@@ -84,20 +84,92 @@ class Database:
         if row is None:
             return None
 
-        event_data: dict[str, str] = {
+        event_data: dict[str, str] = self.get_event_data(row)
+
+        try:
+            return BaseEvent.model_validate(event_data)
+        except ValidationError:
+            return None
+
+    def get_active_sessions(self) -> list[UUID]:
+        """Gets all active sessions"""
+
+        sql: str = """
+            SELECT DISTINCT session_id
+            FROM events
+        """
+
+        with self.conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql)
+            rows = cursor.fetchall()
+
+        return [row["session_id"] for row in rows]
+
+    def get_recent_events(self, limit: int = 10) -> list[BaseEvent]:
+        """Get most recent events, ordered by timestamp descending"""
+
+        sql: str = """
+            SELECT
+                event_id,
+                session_id,
+                event_type,
+                src_ip,
+                src_port,
+                timestamp,
+                payload
+            FROM events
+            ORDER BY timestamp DESC
+            LIMIT %s
+        """
+
+        with self.conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql, (limit,))
+            rows = cursor.fetchall()
+
+        events: list[BaseEvent] = []
+
+        for row in rows:
+            event_data: dict[str, str] = self.get_event_data(row)
+
+            try:
+                event = BaseEvent.model_validate(event_data)
+                events.append(event)
+            except ValidationError:
+                continue
+
+        return events
+
+    def get_event_data(self, row: dict[str, str]) -> dict:
+        """Extracts event data from a database row"""
+
+        return {
             "id": row["event_id"],
             "session_id": row["session_id"],
             "event_type": row["event_type"],
             "src_ip": str(row["src_ip"]),
             "src_port": row["src_port"],
             "timestamp": row["timestamp"],
-            **(row["payload"] or {}),
+            "payload": row["payload"] or {},
         }
 
-        try:
-            return BaseEvent.model_validate(event_data)
-        except ValidationError:
-            return None
+    def get_event_count(self) -> int:
+        """Returns the total number of events in the database in a given timeframe"""
+
+        sql: str
+
+        sql = "SELECT COUNT(*) FROM events"
+
+        with self.conn.cursor() as cursor:
+            cursor.execute(sql)
+            result = cursor.fetchone()
+
+            if result is None:
+                return 0
+
+            else:
+                count = result[0]
+
+        return count
 
     def validate_event(self, event_json: str) -> BaseEvent | None:
         """Compares the json string to Pydantic model to ensure json integrity"""
