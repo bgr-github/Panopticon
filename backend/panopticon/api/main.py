@@ -31,17 +31,12 @@ def get_database() -> Generator[Database, None, None]:
         database.close()
 
 
-@app.get("/events/", response_model=list[BaseEvent])
+@app.get("/events", response_model=list[BaseEvent])
 def get_recent_events(
     limit: int = 10,
     database: Database = Depends(get_database),
 ) -> list[BaseEvent]:
     return database.get_recent_events(limit=limit)
-
-
-@app.get("/events/number", response_model=int)
-def get_event_count(database: Database = Depends(get_database)) -> int:
-    return database.get_event_count()
 
 
 @app.get("/events/stream")

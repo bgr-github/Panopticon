@@ -91,20 +91,6 @@ class Database:
         except ValidationError:
             return None
 
-    def get_active_sessions(self) -> list[UUID]:
-        """Gets all active sessions"""
-
-        sql: str = """
-            SELECT DISTINCT session_id
-            FROM events
-        """
-
-        with self.conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(sql)
-            rows = cursor.fetchall()
-
-        return [row["session_id"] for row in rows]
-
     def get_recent_events(self, limit: int = 10) -> list[BaseEvent]:
         """Get most recent events, ordered by timestamp descending"""
 
@@ -124,6 +110,39 @@ class Database:
 
         with self.conn.cursor(row_factory=dict_row) as cursor:
             cursor.execute(sql, (limit,))
+            rows = cursor.fetchall()
+
+        events: list[BaseEvent] = []
+
+        for row in rows:
+            event_data: dict[str, str] = self.get_event_data(row)
+
+            try:
+                event = BaseEvent.model_validate(event_data)
+                events.append(event)
+            except ValidationError:
+                continue
+
+        return events
+
+    def get_all_events(self) -> list[BaseEvent]:
+        """Get all events. From the beginning of time"""
+
+        sql: str = """
+            SELECT
+                event_id,
+                session_id,
+                event_type,
+                src_ip,
+                src_port,
+                timestamp,
+                payload
+            FROM events
+            ORDER BY timestamp DESC
+        """
+
+        with self.conn.cursor(row_factory=dict_row) as cursor:
+            cursor.execute(sql)
             rows = cursor.fetchall()
 
         events: list[BaseEvent] = []
