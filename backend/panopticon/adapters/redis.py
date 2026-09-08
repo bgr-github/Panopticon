@@ -35,7 +35,7 @@ class RedisClient:
         return str(message_id)
 
     async def read_batch(self, count: int, block: int) -> list[str]:
-        """Retrieve event data from redis stream"""
+        """Retrieve event data from Redis stream"""
 
         event_batch = await self._xread(self.last_id, count=count, block=block)
 
