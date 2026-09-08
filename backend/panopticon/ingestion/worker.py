@@ -1,9 +1,10 @@
 import asyncio
+from pydantic import ValidationError
 from panopticon.events.models import BaseEvent
 from panopticon.config.constants import Module
 from panopticon.observability.logging import logger
 from panopticon.adapters.redis import RedisClient
-from panopticon.adapters.postgres import Database, InvalidEventError
+from panopticon.adapters.postgres import Database
 
 
 class IngestionWorker:
@@ -44,12 +45,12 @@ async def main() -> None:
 
                 # Loop events if they are
                 for raw_event in events:
-                    event = worker.database.validate_event(raw_event)
-                    if event is not None:
+                    try:
+                        event = BaseEvent.model_validate_json(raw_event)
                         worker.database.store_event(event)
-                    else:
+                    except ValidationError:
                         logger.error(Module.INGESTION, "Error validating event")
-                        raise InvalidEventError
+                        raise
 
             except Exception as e:
                 logger.exception(Module.INGESTION, "Failed to ingest")

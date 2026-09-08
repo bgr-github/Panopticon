@@ -1,27 +1,134 @@
 import psycopg
 import json
-from uuid import UUID
-from psycopg.rows import dict_row
+from typing import LiteralString, Any
+from psycopg.rows import DictRow, dict_row
 from pydantic import ValidationError
 from panopticon.config.settings import settings
 from panopticon.config.constants import Module, COMMON_FIELDS
-from panopticon.events.models import BaseEvent
+from panopticon.events.models import BaseEvent, EventType
 from panopticon.observability.logging import logger
 
 
-class InvalidEventError(Exception):
-    pass
+def get_event_data_from_row(row: DictRow) -> dict[str, Any]:
+    """Convert a PostgreSQL DictRow into pydantic event"""
+
+    payload = row["payload"] if isinstance(row["payload"], dict) else {}
+
+    return {
+        "id": row["event_id"],
+        "session_id": row["session_id"],
+        "event_type": row["event_type"],
+        "src_ip": str(row["src_ip"]),
+        "src_port": row["src_port"],
+        "timestamp": row["timestamp"],
+        **payload,
+    }
+
+def construct_event(event_data: dict[str, Any]) -> BaseEvent | None:
+    try:
+        return BaseEvent.model_validate(event_data)
+    except ValidationError as e:
+        logger.warning(Module.DATABASE, f"Error validating event field: {e}")
+        return None
 
 
 class Database:
 
-    conn: psycopg.Connection
+    conn: psycopg.Connection[DictRow]
 
-    def __init__(self) -> None:
-        self.conn = psycopg.connect(settings.database.dsn)
+    def __init__(self):
+        self.conn = psycopg.connect(settings.database.dsn, row_factory=dict_row)  # type: ignore
+        logger.info(Module.DATABASE, "Database initialised.")
+
+    def get_event(self, event_id: str) -> BaseEvent | None:
+        """
+        Fetches a single event by its ID
+
+        Args:
+            event_id: ID of the event
+
+        Returns:
+            A BaseEvent object
+        """
+
+        rows: list[DictRow] = self.execute("SELECT * FROM events WHERE event_id = %s", (event_id,))
+
+        if not rows:
+            return None
+
+        event_data: dict[str, Any] = get_event_data_from_row(rows[0])
+
+        return construct_event(event_data)
+
+    def get_recent_events(self, limit: int = 10, event_type: EventType | None = None) -> list[BaseEvent]:
+        """
+        Fetches recent events from database
+
+        Args:
+            limit: Maximum number of events to return.
+            event_type: Type of event to filter for. Derived from EventType
+
+        Returns:
+            List of BaseEvents
+        """
+
+        if event_type is None:
+            rows = self.execute(
+                """
+                SELECT * FROM events
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """,
+                (limit,),
+            )
+        else:
+            rows = self.execute(
+                """
+                SELECT * FROM events WHERE event_type = %s
+                ORDER BY timestamp DESC
+                LIMIT %s
+                """,
+                (event_type.value, limit),
+            )
+
+        events: list[BaseEvent] = []
+
+        # Validate the data with pydantic to return BaseEvent list
+        for row in rows:
+            event_data = get_event_data_from_row(row)
+            event = construct_event(event_data)
+
+            if event is not None:
+                events.append(event)
+
+        return events
+
+    def execute(self, query: LiteralString, params: tuple | None = None) -> list[DictRow]:
+        """
+        Executes an SQL query
+
+        Args:
+            query: SQL query
+            params: SQL params
+
+        Returns:
+            List of DictRows
+        """
+
+        with self.conn.cursor() as cursor:
+            cursor.execute(query, params)
+            return cursor.fetchall()
 
     def store_event(self, event: BaseEvent) -> None:
-        """Store a single event in the events table."""
+        """
+        Stores an event in database
+
+        Args:
+            event: Event to store
+
+        Returns:
+            None
+        """
 
         sql = """
             INSERT INTO events (
@@ -58,147 +165,16 @@ class Database:
 
             self.conn.commit()
 
-        except psycopg.DatabaseError as e:
+        except psycopg.DatabaseError:
             self.conn.rollback()
             logger.exception(Module.INGESTION, "Failed to insert into database.")
             raise
 
-    def get_event_by_id(self, event_id: str) -> BaseEvent | None:
-        """Gets one event by its ID"""
-
-        sql: str = """
-            SELECT
-                event_id,
-                session_id,
-                event_type,
-                src_ip,
-                src_port,timestamp,
-                payload
-            FROM events WHERE event_id = %s
-                    """
-
-        with self.conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(sql, (event_id,))
-            row = cursor.fetchone()
-
-        if row is None:
-            return None
-
-        event_data: dict[str, str] = self.get_event_data(row)
-
-        try:
-            return BaseEvent.model_validate(event_data)
-        except ValidationError:
-            return None
-
-    def get_recent_events(self, limit: int = 10) -> list[BaseEvent]:
-        """Get most recent events, ordered by timestamp descending"""
-
-        sql: str = """
-            SELECT
-                event_id,
-                session_id,
-                event_type,
-                src_ip,
-                src_port,
-                timestamp,
-                payload
-            FROM events
-            ORDER BY timestamp DESC
-            LIMIT %s
-        """
-
-        with self.conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(sql, (limit,))
-            rows = cursor.fetchall()
-
-        events: list[BaseEvent] = []
-
-        for row in rows:
-            event_data: dict[str, str] = self.get_event_data(row)
-
-            try:
-                event = BaseEvent.model_validate(event_data)
-                events.append(event)
-            except ValidationError:
-                continue
-
-        return events
-
-    def get_all_events(self) -> list[BaseEvent]:
-        """Get all events. From the beginning of time"""
-
-        sql: str = """
-            SELECT
-                event_id,
-                session_id,
-                event_type,
-                src_ip,
-                src_port,
-                timestamp,
-                payload
-            FROM events
-            ORDER BY timestamp DESC
-        """
-
-        with self.conn.cursor(row_factory=dict_row) as cursor:
-            cursor.execute(sql)
-            rows = cursor.fetchall()
-
-        events: list[BaseEvent] = []
-
-        for row in rows:
-            event_data: dict[str, str] = self.get_event_data(row)
-
-            try:
-                event = BaseEvent.model_validate(event_data)
-                events.append(event)
-            except ValidationError:
-                continue
-
-        return events
-
-    def get_event_data(self, row: dict[str, str]) -> dict:
-        """Extracts event data from a database row"""
-
-        return {
-            "id": row["event_id"],
-            "session_id": row["session_id"],
-            "event_type": row["event_type"],
-            "src_ip": str(row["src_ip"]),
-            "src_port": row["src_port"],
-            "timestamp": row["timestamp"],
-            "payload": row["payload"] or {},
-        }
-
-    def get_event_count(self) -> int:
-        """Returns the total number of events in the database in a given timeframe"""
-
-        sql: str
-
-        sql = "SELECT COUNT(*) FROM events"
-
-        with self.conn.cursor() as cursor:
-            cursor.execute(sql)
-            result = cursor.fetchone()
-
-            if result is None:
-                return 0
-
-            else:
-                count = result[0]
-
-        return count
-
-    def validate_event(self, event_json: str) -> BaseEvent | None:
-        """Compares the json string to Pydantic model to ensure json integrity"""
-
-        try:
-            return BaseEvent.model_validate_json(event_json)
-        except ValidationError:
-            return None
-
     def close(self) -> None:
-        """Gracefully close connection"""
+        """
+        Close the connection
+
+        Returns: None
+        """
 
         self.conn.close()
