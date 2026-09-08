@@ -28,10 +28,10 @@ class EventHandler:
 
         try:
             task.result()
-        except Exception as e:
+        except asyncio.CancelledError as e:
             logger.exception(Module.EVENT_HANDLER, "Error publishing task")
 
     async def close(self) -> None:
-        """Gracefully close redis connection"""
+        """Gracefully close Redis connection"""
 
         await self.redis.close()

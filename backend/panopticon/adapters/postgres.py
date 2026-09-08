@@ -1,6 +1,7 @@
 import psycopg
 import json
-from typing import LiteralString, Any
+from datetime import datetime
+from typing import LiteralString, Any, cast
 from psycopg.rows import DictRow, dict_row
 from pydantic import ValidationError
 from panopticon.config.settings import settings
@@ -23,6 +24,7 @@ def get_event_data_from_row(row: DictRow) -> dict[str, Any]:
         "timestamp": row["timestamp"],
         **payload,
     }
+
 
 def construct_event(event_data: dict[str, Any]) -> BaseEvent | None:
     try:
@@ -60,63 +62,127 @@ class Database:
 
         return construct_event(event_data)
 
-    def get_recent_events(self, limit: int = 10, event_type: EventType | None = None) -> list[BaseEvent]:
-        """
-        Fetches recent events from database
+    def get_session(self, session_id: str) -> list[BaseEvent] | None:
+        """Get a list of events belonging to a session in ascending order
 
         Args:
-            limit: Maximum number of events to return.
-            event_type: Type of event to filter for. Derived from EventType
+            session_id (str): Session ID
 
         Returns:
-            List of BaseEvents
+            list[BaseEvent] | None:
         """
 
-        if event_type is None:
-            rows = self.execute(
-                """
-                SELECT * FROM events
-                ORDER BY timestamp DESC
-                LIMIT %s
-                """,
-                (limit,),
-            )
-        else:
-            rows = self.execute(
-                """
-                SELECT * FROM events WHERE event_type = %s
-                ORDER BY timestamp DESC
-                LIMIT %s
-                """,
-                (event_type.value, limit),
-            )
+        sql: LiteralString = """
+            SELECT * FROM events
+            WHERE session_id = %s
+            ORDER BY timestamp ASC
+        """
+
+        rows: list[DictRow] = self.execute(sql, (session_id,))
+
+        if not rows:
+            return None
 
         events: list[BaseEvent] = []
 
-        # Validate the data with pydantic to return BaseEvent list
         for row in rows:
             event_data = get_event_data_from_row(row)
-            event = construct_event(event_data)
 
-            if event is not None:
-                events.append(event)
+            try:
+                events.append(BaseEvent.model_validate(event_data))
+            except ValidationError as e:
+                logger.error(Module.DATABASE, f"Error validating event during get_recent_events(): {e}")
 
         return events
 
-    def execute(self, query: LiteralString, params: tuple | None = None) -> list[DictRow]:
-        """
-        Executes an SQL query
+    def get_recent_events(
+        self,
+        limit: int = 10,
+        event_type: EventType | None = None,
+        src_ip: str | None = None,
+        src_port: int | None = None,
+        session_id: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[BaseEvent]:
+        """Gets all recent events with specified filters
 
         Args:
-            query: SQL query
-            params: SQL params
+            limit (int, optional): Maximum number of events returned. Defaults to 10.
+            event_type (EventType | None, optional): Type of event, derived from EventTime. Defaults to None.
+            src_ip (str | None, optional): IP of attacker. Defaults to None.
+            src_port (int | None, optional): Port of attacker. Defaults to None.
+            session_id (str | None, optional): Connection session ID. Defaults to None.
+            start_time (datetime | None, optional): Time filter start. Defaults to None.
+            end_time (datetime | None, optional): Time filter end. Defaults to None.
 
         Returns:
-            List of DictRows
+            list[BaseEvent]
         """
 
+        sql: str = """
+            SELECT * FROM events
+        """
+
+        filters: list[str] = []
+        params: list[Any] = []
+
+        if event_type is not None:
+            filters.append("event_type = %s")
+            params.append(event_type.value)
+
+        if src_ip is not None:
+            filters.append("src_ip = %s")
+            params.append(src_ip)
+
+        if src_port is not None:
+            filters.append("src_port = %s")
+            params.append(src_port)
+
+        if session_id is not None:
+            filters.append("session_id = %s")
+            params.append(session_id)
+
+        if start_time is not None:
+            filters.append("timestamp >= %s")
+            params.append(start_time)
+
+        if end_time is not None:
+            filters.append("timestamp <= %s")
+            params.append(end_time)
+
+        if filters:
+            sql += " WHERE " + " AND ".join(filters)
+
+        sql += """
+            ORDER BY timestamp DESC
+            LIMIT %s
+        """
+
+        params.append(limit)
+
+        # Ensure type is compatible with execute
+        rows = self.execute(sql, tuple(params))
+        events: list[BaseEvent] = []
+
+        for row in rows:
+            event_data = get_event_data_from_row(row)
+
+            try:
+                events.append(BaseEvent.model_validate(event_data))
+            except ValidationError as e:
+                logger.error(Module.DATABASE, f"Error validating event during get_recent_events(): {e}")
+
+        return events
+
+    def execute(self, sql: LiteralString | str, params: tuple | None = None) -> list[DictRow]:
+
+        # Ensure SQL is always LiteralString type
+        if isinstance(sql, str):
+            sql = cast(LiteralString, sql)
+
         with self.conn.cursor() as cursor:
-            cursor.execute(query, params)
+            cursor.execute(sql, params)
             return cursor.fetchall()
 
     def store_event(self, event: BaseEvent) -> None:
