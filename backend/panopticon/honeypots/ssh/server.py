@@ -1,6 +1,6 @@
 import asyncio
+
 from asyncssh import SSHServer, SSHServerConnection
-from typing import Optional
 from panopticon.honeypots.ssh.shell import ShellSession
 
 
@@ -16,15 +16,12 @@ class HoneypotServer(SSHServer):
             conn (SSHServerConnection): User's connection object
         """
 
-        pass
-
-    def connection_lost(self, exc: Optional[Exception]) -> None:
+    def connection_lost(self, exc: Exception | None) -> None:
         """Callback made when the client connection drops.
 
         Args:
             exc (Optional[Exception]): None if connection closes cleanly.
         """
-        pass
 
     def begin_auth(self, username: str) -> bool:
         """Callback made when the client begins the authorisation process.
