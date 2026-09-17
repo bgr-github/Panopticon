@@ -2,6 +2,7 @@ import asyncio
 
 from asyncssh import SSHServer, SSHServerConnection
 from panopticon.honeypots.ssh.shell import ShellSession
+from panopticon.observability.logger import configure_logging
 
 
 class HoneypotServer(SSHServer):
@@ -72,6 +73,7 @@ async def main() -> None:
 
 if __name__ == "__main__":
     try:
+        configure_logging("SSH")
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
