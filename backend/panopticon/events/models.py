@@ -1,0 +1,49 @@
+from datetime import datetime, timezone
+from enum import StrEnum
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+# Enums
+class EventType(StrEnum):
+    connection_open = "connection_open"
+    connection_closed = "connection_closed"
+    login_attempt = "login_attempt"
+    command = "command"
+    file_download = "file_download"
+
+
+# Event Types
+class BaseEvent(BaseModel):
+    """Every event on any type of honeypot will have these fields"""
+
+    model_config = ConfigDict(extra="allow")
+
+    id: UUID = Field(default_factory=uuid4)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    session_id: str
+    src_ip: str
+    src_port: int
+    event_type: EventType
+
+
+class ConnectionOpen(BaseEvent):
+    event_type: EventType = EventType.connection_open
+
+
+class ConnectionClosed(BaseEvent):
+    event_type: EventType = EventType.connection_closed
+    duration_seconds: float
+
+
+class LoginAttempt(BaseEvent):
+    event_type: EventType = EventType.login_attempt
+    username: str
+    password: str
+    success: bool
+
+
+class Command(BaseEvent):
+    event_type: EventType = EventType.command
+    input: str
