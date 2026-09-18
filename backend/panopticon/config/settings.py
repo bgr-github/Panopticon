@@ -1,4 +1,3 @@
-from logging import Formatter
 from pathlib import Path
 
 from pydantic import Field
@@ -21,12 +20,10 @@ class LoggingSettings(BaseSettings):
 
 class Settings(BaseSettings):
     app_name: str = "panopticon"
-    environment: str = "dev"
+    environment: str = "dev"  # dev or prod
 
     ssh: SSHHoneypotSettings = Field(default_factory=SSHHoneypotSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
 
 
 settings = Settings()
-
-print(__name__)

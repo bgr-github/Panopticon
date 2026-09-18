@@ -1,8 +1,12 @@
 import asyncio
+import logging
 
-from asyncssh import SSHServer, SSHServerConnection
+from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_server
+from panopticon.config.settings import settings
 from panopticon.honeypots.ssh.shell import ShellSession
 from panopticon.observability.logger import configure_logging
+
+logger = logging.getLogger("SSH")
 
 
 class HoneypotServer(SSHServer):
@@ -68,7 +72,25 @@ class HoneypotServer(SSHServer):
 
 
 async def main() -> None:
-    pass
+    server: SSHAcceptor | None = None
+
+    try:
+        await create_server(
+            server_factory=lambda: HoneypotServer(),
+            host=settings.ssh.host,
+            port=settings.ssh.port,
+            server_host_keys=settings.ssh.host_key_path,
+        )
+
+        logger.info(f"Server listening on f{settings.ssh.host}:{settings.ssh.port}...")
+
+        await asyncio.Future()
+    except asyncio.CancelledError:
+        raise
+    except Error as e:
+        logger.error(e)
+    except FileNotFoundError:
+        logger.error("Please provide SSH host keys.")
 
 
 if __name__ == "__main__":
