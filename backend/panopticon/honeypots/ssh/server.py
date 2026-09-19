@@ -75,6 +75,9 @@ class HoneypotServer(SSHServer):
         Returns:
             bool: Whether the client is successful or not.
         """
+
+        self.session.username = username
+
         return True
 
     def password_auth_supported(self) -> bool:
