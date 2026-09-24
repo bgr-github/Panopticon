@@ -85,7 +85,7 @@ class CommandHandler:
                 output = ["Available Commands:"]
                 output.extend(f"  {command_name}" for command_name in sorted(registry))
             elif name == "exit":
-                output = ["exit"]
+                output = ["exit_gracefully"]
             else:
                 output = [f"bash: {name}: command not found"]
         else:
@@ -100,7 +100,7 @@ class CommandHandler:
             )
         )
 
-        if output == ["exit"]:
-            return "exit"
+        if output == ["exit_gracefully"]:
+            self.chan.close()
 
         return "\r\n".join(output)

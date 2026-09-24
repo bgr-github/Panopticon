@@ -67,13 +67,14 @@ class ShellSession(SSHServerSession):
             output = self.handler.handle_input(command)
 
             if output:
-                if output == "exit":
-                    self.chan.close()
-                else:
-                    self.chan.write(fix_endline(output))
+                self.chan.write(fix_endline(output))
+
+        except OSError:
+            # For exiting
+            pass
 
         except Exception as e:
-            logger.error(f"Shell error: {e}")
+            logger.error(e)
 
         self._prompt_input()
 

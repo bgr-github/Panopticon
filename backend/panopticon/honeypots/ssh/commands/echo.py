@@ -5,4 +5,4 @@ MAN = "echo - display a line of text"
 
 
 def run(ctx: SSHCommandContext) -> list[str]:
-    return ctx.args
+    return [" ".join(ctx.args)]
