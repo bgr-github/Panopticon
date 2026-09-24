@@ -6,7 +6,7 @@ Panopticon is an SSH honeypot that simulates shell interactions and emits struct
 
 1. Clone the repository and change directory
 
-`git clone git@github.com:bgr-github/Panopticon.git && cd Panopticon-main`
+`git clone git@github.com:bgr-github/Panopticon.git && cd Panopticon`
 
 2. Create Docker container & generate SSH keys
 
@@ -51,4 +51,4 @@ def run(ctx: SSHCommandContext) -> list[str]:
 ```
 
 ## Testing
-To run tests use `uv run --locked pytest panopticon.tests`. SSH integration tests do not require Panopticon to be running in Docker to work.
+To run tests use `uv run --locked pytest panopticon/tests -v`. SSH integration tests do not require Panopticon to be running in Docker to work.
