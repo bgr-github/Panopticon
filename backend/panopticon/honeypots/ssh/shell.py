@@ -74,7 +74,7 @@ class ShellSession(SSHServerSession):
             pass
 
         except Exception as e:
-            logger.error(e)
+            logger.error(f"Command handler error: {e}")
 
         self._prompt_input()
 

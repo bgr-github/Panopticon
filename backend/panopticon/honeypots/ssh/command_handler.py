@@ -73,7 +73,6 @@ class CommandHandler:
             name=name,
             args=args,
             session=self.session,
-            chan=self.chan,
             event_handler=self.event_handler,
         )
 
@@ -88,8 +87,6 @@ class CommandHandler:
                 output = ["exit_gracefully"]
             else:
                 output = [f"bash: {name}: command not found"]
-        else:
-            output = entry.fn(context) or []
 
         self.event_handler.publish(
             Command(
@@ -100,7 +97,11 @@ class CommandHandler:
             )
         )
 
+        if entry is not None:
+            output = entry.fn(context) or []
+
         if output == ["exit_gracefully"]:
             self.chan.close()
 
+        # terminal friendly line output
         return "\r\n".join(output)

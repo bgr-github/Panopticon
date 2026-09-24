@@ -24,7 +24,6 @@ class SSHCommandContext:
     name: str
     args: list[str]
     session: SSHSessionContext
-    chan: SSHServerChannel
     event_handler: EventHandler
 
 

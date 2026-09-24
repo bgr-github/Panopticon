@@ -3,7 +3,7 @@ import logging
 import time
 from uuid import uuid4
 
-from asyncssh import Error, SSHServer, SSHServerConnection, create_server
+from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_server
 from panopticon.config.settings import settings
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionClosed, ConnectionOpen, LoginAttempt
@@ -114,7 +114,7 @@ class HoneypotServer(SSHServer):
                 )
             )
         else:
-            logger.warning(f"Validation without session. Session ID: {self.session.session_id}")
+            logger.warning(f"Validation without session. Session ID: {self.session.id}")
 
         return success
 
@@ -129,8 +129,10 @@ class HoneypotServer(SSHServer):
 
 
 async def main() -> None:
+    server: SSHAcceptor | None = None
+
     try:
-        await create_server(
+        server = await create_server(
             server_factory=lambda: HoneypotServer(EventHandler()),
             host=settings.ssh.host,
             port=settings.ssh.port,
@@ -146,6 +148,10 @@ async def main() -> None:
         logger.error(e)
     except FileNotFoundError:
         logger.error("Please provide SSH host keys.")
+
+    finally:
+        if server is not None:
+            server.close()
 
 
 if __name__ == "__main__":
