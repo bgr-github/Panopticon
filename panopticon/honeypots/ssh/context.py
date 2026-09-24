@@ -1,7 +1,6 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from asyncssh import SSHServerChannel
 from panopticon.events.event_handler import EventHandler
 
 
