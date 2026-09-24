@@ -1,9 +1,11 @@
 import asyncio
 import logging
+import sys
 import time
 from uuid import uuid4
 
 from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_server
+
 from panopticon.config.settings import settings
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionClosed, ConnectionOpen, LoginAttempt
@@ -148,6 +150,7 @@ async def main() -> None:
         logger.error(e)
     except FileNotFoundError:
         logger.error("Please provide SSH host keys.")
+        sys.exit(1)
 
     finally:
         if server is not None:
