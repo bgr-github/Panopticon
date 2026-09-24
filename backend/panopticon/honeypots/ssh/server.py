@@ -125,7 +125,7 @@ class HoneypotServer(SSHServer):
             ShellSession: Client's session as an object.
         """
 
-        return ShellSession()
+        return ShellSession(self.event_handler, self.session)
 
 
 async def main() -> None:
@@ -151,6 +151,7 @@ async def main() -> None:
 if __name__ == "__main__":
     try:
         configure_logging("SSH")
+        logging.getLogger("asyncssh").setLevel(logging.ERROR)
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
