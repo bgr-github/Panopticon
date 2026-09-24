@@ -1,0 +1,18 @@
+services:
+  ssh:
+    build: .
+    environment:
+      PANOPTICON_ENVIRONMENT: dev
+      PANOPTICON_SSH__HOST: "0.0.0.0"
+      PANOPTICON_SSH__PORT: "2222"
+      PANOPTICON_SSH__HOST_KEY_PATH: '["/app/keys/ssh_host_key"]'
+      PANOPTICON_LOGGING__LOG_DIR: "/app/logs"
+    ports:
+      - "127.0.0.1:2222:2222"
+    volumes:
+      - ssh_keys:/app/keys
+      - ssh_logs:/app/logs
+
+volumes:
+  ssh_keys:
+  ssh_logs:
