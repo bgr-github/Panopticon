@@ -1,59 +1,54 @@
 # Panopticon
 
-Panopticon captures interactions with simulated SSH service, stores them as structured events and lets an operator inspect live and historical activity.
+Panopticon is an SSH honeypot that simulates shell interactions and emits structured events for a number of event types. Persistent event storage, an API and a dashboard are planned for the future.
 
-## Proposed Architecture
-```mermaid
-flowchart LR
-    Honeypot --> Handler[Event handler]
-    Handler -- Publish events --> Redis[(Redis Streams)]
+## Quick Start
 
-    Redis -- Consume events --> Worker[Ingestion worker]
-    Worker -- Persist events --> DB[(PostgreSQL)]
+1. Clone the repository and change directory
 
-    DB -- Historical events --> API[API service]
-    Redis -- Live events --> API
-    API -- REST responses and SSE --> UI[Dashboard]
+`git clone git@github.com:bgr-github/Panopticon.git && cd Panopticon-main`
+
+2. Create Docker container & generate SSH keys
+
+```bash
+docker compose build
+docker compose run --rm ssh python -m panopticon.init_keys
+docker compose up -d
 ```
-### Services
-| Service          | Purpose                                                                                                      |
-|------------------|--------------------------------------------------------------------------------------------------------------|
-| Controller       | Start and stop configured honeypots and reconcile their desired and actual states.                           |
-| Ingestion worker | Consume events, validate them, persist them, and acknowledge successful processing; recover unfinished work. |
-| API              | Provide filtered historical queries and stream live events to dashboard clients.                             |
-| Frontend         | Display events, filters, and connection status.                                                              |
-| SSH Honeypot     | Simulate SSH interactions and produce connection, authentication, and command events.                        |
 
-## API
-### Endpoints
-`GET /events` -- Shows a list of events in a newest-first order
+3. Test the server
 
-| Parameter  | Type      | Proposed Behaviour                                           |
-| ---------- | --------- | ------------------------------------------------------------ |
-| limit      | int       | Default `50`, minimum `1`, maximum `500`.                    |
-| event_type | EventType | One of the supported event types. Invalid values return 422. |
-| src_ip     | string    | Exact IPv4 address match.                                    |
-| src_port   | int       | Exact source-port match, from `0` to `65535`.                |
-| session_id | string    | Exact session ID match.                                      |
-| start_time | datetime  | Include events at or after this timestamp                    |
-| end_time   | datetime  | Include events before this timestamp.                        |
+`ssh <username>@127.0.0.1 -p 2222`
 
-`GET /events/stream` -- Live events stream using Server-Sent Events.
+4. To shut down the server
+`docker compose down`
 
-## Reliability
+## Information
 
-- Events retain the same event ID across retried.
-- The ingestion worker only acknowledges after a successful PostgreSQL commit.
-- Reprocessing an existing event ID does not create another stored event.
-- Unacknowledged messages are recoverable after a worker restart.
-- Invalid events are preserved with a failure reason for investigation.
+The honeypot currently accepts any password from any username. Ensure you use dummy credentials when testing as everything is stored in plain text.
+
+Upon connecting to the server, the attacker will see a welcome banner and a shell prompt. The welcome banner will be updated down the line when I start working on the server realism.
 
 
-## Stack
 
-**Backend:**
-- Psycopg3 (PostgreSQL with SQLAlchemy abstraction)
-- Pydantic for type checking and serialisation
-- Asynchronous I/O as there will be several concurrent users making DB and log file writes.
-- AsyncSSH for an asynchronous SSH server
-- Redis for event integrity and recovery
+## Creating commands
+You are more than welcome to create commands for Panopticon using the module template. The command handler will read all matching modules in the `honeypots/ssh/commands/` folder and load them into registry.
+
+Here is the echo command as an example. Return type must be a `list[str]`, even if it is just one line.
+
+- `NAME` - Name of the command. File name will be used if this is not present.
+- `MAN` - Manual text for this command, should match Unix systems exactly. `man echo` for example.
+
+```py
+from panopticon.honeypots.ssh.context import SSHCommandContext
+
+NAME = "echo"
+MAN = "echo - display a line of text"
+
+
+def run(ctx: SSHCommandContext) -> list[str]:
+    return [" ".join(ctx.args)]
+```
+
+## Testing
+To run tests use `uv run --locked pytest panopticon.tests`. SSH integration tests do not require Panopticon to be running in Docker to work.
