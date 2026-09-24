@@ -1,0 +1,16 @@
+[project]
+name = "panopticon"
+version = "0.1.0"
+description = "SSH honeypot that captures structured interaction events."
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "asyncssh>=2,<3",
+    "pydantic>=2,<3",
+    "pydantic-settings>=2,<3"
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
