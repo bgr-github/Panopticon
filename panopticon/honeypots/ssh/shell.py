@@ -1,6 +1,7 @@
 import logging
 
 from asyncssh import SSHServerChannel, SSHServerSession
+
 from panopticon.events.event_handler import EventHandler
 from panopticon.honeypots.ssh.command_handler import CommandHandler
 from panopticon.honeypots.ssh.context import SSHSessionContext

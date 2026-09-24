@@ -1,8 +1,8 @@
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from asyncssh import SSHServerChannel
 from panopticon.events.event_handler import EventHandler
+from panopticon.honeypots.ssh.filesystem import FakeFileSystem
 
 
 @dataclass
@@ -14,6 +14,11 @@ class SSHSessionContext:
     src_port: int
     start_time: float
     username: str | None = None
+
+    # Filesystem
+    cwd: str = "/home/admin"
+    home: str = "/home/admin"
+    fs: FakeFileSystem = field(default_factory=FakeFileSystem)
 
 
 @dataclass

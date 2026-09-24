@@ -3,6 +3,7 @@ import logging
 import pkgutil
 
 from asyncssh import SSHServerChannel
+
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import Command
 from panopticon.honeypots.ssh import commands
