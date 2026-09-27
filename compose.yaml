@@ -12,7 +12,24 @@ services:
     volumes:
       - ssh_keys:/app/keys
       - ssh_logs:/app/logs
+  redis:
+    image: redis:8
+    command:
+      - redis-server
+      - --appendonly
+      - "yes"
+      - --appendfsync
+      - everysec
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   ssh_keys:
   ssh_logs:
+  redis_data:
