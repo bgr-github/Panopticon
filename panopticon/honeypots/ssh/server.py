@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import time
+from dataclasses import replace
 from uuid import uuid4
 
 from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_server
@@ -11,6 +12,7 @@ from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionClosed, ConnectionOpen, LoginAttempt
 from panopticon.events.sqlite_store import SQLiteEventStore
 from panopticon.honeypots.ssh.context import SSHSessionContext
+from panopticon.honeypots.ssh.persona import SSH_VERSION
 from panopticon.honeypots.ssh.shell import ShellSession
 from panopticon.observability.logger import configure_logging
 
@@ -36,6 +38,13 @@ class HoneypotServer(SSHServer):
             connections (set[SSHServerConnection] | None): Active connections tracked for shutdown
         """
 
+    def __init__(self, event_handler: EventHandler) -> None:
+        """Initialises the SSH server with its event publisher
+
+        Args:
+            event_handler (EventHandler): Handler used to publish connection and authentication events
+        """
+
         self.event_handler = event_handler
         self.connections = connections
 
@@ -52,7 +61,7 @@ class HoneypotServer(SSHServer):
             self.connections.add(conn)
 
         self.session = SSHSessionContext(
-            id=uuid4().hex[:8],
+            id=uuid4().hex,
             src_ip=conn.get_extra_info("peername")[0],
             src_port=conn.get_extra_info("peername")[1],
             start_time=time.monotonic(),
@@ -98,7 +107,7 @@ class HoneypotServer(SSHServer):
             bool: Whether the client is successful or not.
         """
 
-        self.session.username = username
+        self.session.initialise_user(username)
 
         return True
 
@@ -147,11 +156,21 @@ class HoneypotServer(SSHServer):
             ShellSession: Client's session as an object.
         """
 
-        return ShellSession(self.event_handler, self.session)
+        return ShellSession(
+            self.event_handler,
+            replace(
+                self.session,
+                environment=dict(self.session.environment),
+                history=[],
+                cwd=self.session.home,
+                previous_cwd=None,
+                last_status=0,
+            ),
+        )
 
 
 async def main() -> None:
-    """Runs the SSH service and drains collected events after connections close"""
+    """Starts the SSH honeypot and closes the listener when the service stops"""
 
     server: SSHAcceptor | None = None
     connections: set[SSHServerConnection] = set()
@@ -166,6 +185,9 @@ async def main() -> None:
             host=settings.ssh.host,
             port=settings.ssh.port,
             server_host_keys=settings.ssh.host_key_path,
+            server_version=SSH_VERSION,
+            max_line_length=16384,
+            login_timeout=30,
         )
 
         logger.info(f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
@@ -183,14 +205,6 @@ async def main() -> None:
         if server is not None:
             server.close()
             await server.wait_closed()
-
-        active_connections: tuple[SSHServerConnection, ...] = tuple(connections)
-
-        for connection in active_connections:
-            connection.close()
-
-        await asyncio.gather(*(connection.wait_closed() for connection in active_connections))
-        await event_handler.close()
 
 
 if __name__ == "__main__":

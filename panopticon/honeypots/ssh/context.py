@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 
 from panopticon.events.event_handler import EventHandler
 from panopticon.honeypots.ssh.filesystem import FakeFileSystem
+from panopticon.honeypots.ssh.persona import HOSTNAME
 
 
 @dataclass
@@ -19,6 +20,53 @@ class SSHSessionContext:
     cwd: str = "/home/admin"
     home: str = "/home/admin"
     fs: FakeFileSystem = field(default_factory=FakeFileSystem)
+    hostname: str = HOSTNAME
+    previous_cwd: str | None = None
+    environment: dict[str, str] = field(default_factory=dict)
+    last_status: int = 0
+    history: list[str] = field(default_factory=list)
+
+    def initialise_user(self, username: str) -> None:
+        # Usernames are untrusted: keep path/control characters out of the persona.
+        """Initialises the simulated account, home directory and environment
+
+        Args:
+            username (str): Username supplied by the client before sanitisation
+        """
+
+        import re
+
+        self.username = re.sub(r"[^a-zA-Z0-9_.-]", "_", username)[:64] or "ubuntu"
+
+        if self.username in (".", ".."):
+            self.username = "ubuntu"
+
+        self.home = self.fs.add_user(self.username)
+        self.cwd = self.home
+        self.environment = {
+            "USER": self.username,
+            "LOGNAME": self.username,
+            "HOME": self.home,
+            "SHELL": "/bin/bash",
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "LANG": "C.UTF-8",
+        }
+
+    @property
+    def prompt(self) -> str:
+        """Builds the shell prompt for the current user and working directory
+
+        Returns:
+            str: Ubuntu-style shell prompt
+        """
+
+        path: str = self.cwd
+
+        if path == self.home or path.startswith(self.home + "/"):
+            path = "~" + path[len(self.home):]
+
+        suffix: str = "#" if self.username == "root" else "$"
+        return f"{self.username or 'admin'}@{self.hostname}:{path}{suffix} "
 
 
 @dataclass
@@ -30,6 +78,8 @@ class SSHCommandContext:
     args: list[str]
     session: SSHSessionContext
     event_handler: EventHandler
+    stdin: str = ""
+    status: int = 0
 
 
 @dataclass

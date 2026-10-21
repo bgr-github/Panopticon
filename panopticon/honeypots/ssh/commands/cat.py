@@ -4,21 +4,30 @@ NAME = "cat"
 
 
 def run(ctx: SSHCommandContext) -> list[str]:
-    if len(ctx.args) != 1:
-        return ["cat: exactly one file argument is required"]
+    """Reads virtual files or piped input
 
-    target = ctx.args[0]
+    Args:
+        ctx (SSHCommandContext): Context containing command arguments and session state
 
-    try:
-        content = ctx.session.fs.read_file(
-            target,
-            cwd=ctx.session.cwd,
-        )
-    except FileNotFoundError:
-        return [f"cat: {target}: No such file or directory"]
-    except NotADirectoryError:
-        return [f"cat: {target}: Not a directory"]
-    except IsADirectoryError:
-        return [f"cat: {target}: Is a directory"]
+    Returns:
+        list[str]: Lines of command output
+    """
 
-    return content.splitlines()
+    if not ctx.args:
+        return ctx.stdin.splitlines()
+
+    output: list[str] = []
+
+    for target in ctx.args:
+        try:
+            output.extend(ctx.session.fs.read_file(target, ctx.session.cwd).splitlines())
+        except OSError as exc:
+            ctx.status = 1
+            reason: str = (
+                "Is a directory"
+                if isinstance(exc, IsADirectoryError)
+                else ("Not a directory" if isinstance(exc, NotADirectoryError) else "No such file or directory")
+            )
+            output.append(f"cat: {target}: {reason}")
+
+    return output
