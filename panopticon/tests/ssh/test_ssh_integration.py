@@ -6,7 +6,8 @@ import asyncssh
 import pytest
 import pytest_asyncio
 from panopticon.events.event_handler import EventHandler
-from panopticon.events.models import Command, LoginAttempt
+from panopticon.events.models import Command, FileDownloaded, FileUploaded, LoginAttempt
+from panopticon.events.sqlite_store import SQLiteEventStore
 from panopticon.honeypots.ssh.server import HoneypotServer
 from panopticon.honeypots.ssh.persona import SSH_VERSION
 

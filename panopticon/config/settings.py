@@ -23,6 +23,12 @@ class RedisSettings(BaseSettings):
     dsn: RedisDsn = RedisDsn("redis://localhost:6379/0")
 
 
+class DatabaseSettings(BaseModel):
+    path: Path = Path("data/panopticon.sqlite3")
+    timeout: float = Field(default=5.0, gt=0)
+    queue_capacity: int = Field(default=1000, ge=1)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PANOPTICON_",
@@ -37,6 +43,8 @@ class Settings(BaseSettings):
 
     ssh: SSHHoneypotSettings = Field(default_factory=SSHHoneypotSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    # Retained so existing .env files remain valid; SQLite does not use Redis.
     redis: RedisSettings = Field(default_factory=RedisSettings)
 
 
