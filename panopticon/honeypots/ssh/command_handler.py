@@ -28,6 +28,7 @@ def load_commands() -> dict[str, CommandEntry]:
         module = importlib.import_module(f"panopticon.honeypots.ssh.commands.{module_name}")
 
         run = getattr(module, "run", None)
+
         if run is None:
             continue
 
@@ -37,6 +38,7 @@ def load_commands() -> dict[str, CommandEntry]:
         for alias in getattr(module, "NAMES", (name,)):
             if alias in _registry:
                 raise ValueError(f"Duplicate command: {alias}")
+
             _registry[alias] = CommandEntry(name=alias, man=man, fn=run)
 
     return _registry
@@ -52,6 +54,14 @@ class CommandHandler:
     event_handler: EventHandler
 
     def __init__(self, chan: SSHServerChannel, session: SSHSessionContext, event_handler: EventHandler) -> None:
+        """Initialises command handling for a client channel
+
+        Args:
+            chan (SSHServerChannel): Channel used by the client
+            session (SSHSessionContext): Session state shared by commands
+            event_handler (EventHandler): Handler used to publish command events
+        """
+
         self.chan = chan
         self.session = session
         self.event_handler = event_handler
@@ -79,15 +89,17 @@ class CommandHandler:
         self.session.history[:] = self.session.history[-100:]
 
         try:
-            lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|<>()")
+            lexer: shlex.shlex = shlex.shlex(command, posix=False, punctuation_chars=";&|<>()")
             lexer.whitespace_split = True
-            tokens = list(lexer)
+            tokens: list[str] = list(lexer)
 
             if any(token in ("&", "(", ")", "<<") or token.startswith("`") for token in tokens):
                 raise ValueError("unsupported shell syntax")
 
             # Build a list of pipelines joined by ;, && and ||.
-            groups, current, connector = [], [], ";"
+            groups: list[tuple[str, list[str]]] = []
+            current: list[str] = []
+            connector: str = ";"
 
             for token in tokens:
                 if token in (";", "&&", "||"):
@@ -106,7 +118,7 @@ class CommandHandler:
             elif connector != ";":
                 raise ValueError("unexpected end of file")
 
-            output = []
+            output: list[str] = []
 
             for connector, group in groups:
                 if self.closed:
@@ -118,7 +130,8 @@ class CommandHandler:
                 if connector == "||" and self.session.last_status == 0:
                     continue
 
-                stages, stage = [], []
+                stages: list[list[str]] = []
+                stage: list[str] = []
 
                 for token in group:
                     if token == "|":
@@ -134,13 +147,14 @@ class CommandHandler:
                     raise ValueError("unexpected end of file")
 
                 stages.append(stage)
-                data = ""
+                data: str = ""
 
                 for stage in stages:
                     data = self._execute(stage, data + ("\n" if data else ""))
 
                     if self.closed:
                         break
+
                 if data:
                     output.append(data)
 
@@ -153,11 +167,19 @@ class CommandHandler:
             return ""
 
     def _expand(self, token: str) -> str:
+        """Expands quoting, home paths and environment variables in a shell token
+
+        Args:
+            token (str): Shell token to expand
+
+        Returns:
+            str: Expanded token value
+        """
 
         if token.startswith("'") and token.endswith("'"):
             return token[1:-1]
 
-        quoted = token.startswith('"') and token.endswith('"')
+        quoted: bool = token.startswith('"') and token.endswith('"')
 
         if quoted:
             token = token[1:-1]
@@ -165,7 +187,7 @@ class CommandHandler:
         elif token == "~" or token.startswith("~/"):
             token = self.session.home + token[1:]
 
-        env = {**self.session.environment, "PWD": self.session.cwd, "?": str(self.session.last_status)}
+        env: dict[str, str] = {**self.session.environment, "PWD": self.session.cwd, "?": str(self.session.last_status)}
 
         return re.sub(
             r"\$(?:\{([A-Za-z_][A-Za-z_0-9]*|\?)\}|([A-Za-z_][A-Za-z_0-9]*|\?))",
@@ -174,14 +196,30 @@ class CommandHandler:
         )
 
     def _execute(self, tokens: list[str], stdin: str) -> str:
-        args, destination, append = [], None, False
-        index = 0
+        """Runs one simulated command with virtual input and output redirection
+
+        Args:
+            tokens (list[str]): Tokens belonging to the command
+            stdin (str): Input supplied by the previous pipeline stage
+
+        Returns:
+            str: Command output before the terminal newline
+        """
+
+        args: list[str] = []
+        destination: str | None = None
+        append: bool = False
+        index: int = 0
+
         while index < len(tokens):
-            token = tokens[index]
+            token: str = tokens[index]
+
             if token in (">", ">>", "<"):
                 if index + 1 >= len(tokens) or tokens[index + 1] in (">", ">>", "<"):
                     raise ValueError("unexpected end of file")
-                target = self._expand(tokens[index + 1])
+
+                target: str = self._expand(tokens[index + 1])
+
                 if token == "<":
                     try:
                         stdin = self.session.fs.read_file(target, self.session.cwd)
@@ -191,21 +229,31 @@ class CommandHandler:
                         return ""
                 else:
                     destination, append = target, token == ">>"
+
                 index += 2
                 continue
+
             if token in ("&", "(", ")"):
                 raise ValueError("unsupported shell syntax")
+
             args.append(self._expand(token))
             index += 1
+
         if not args:
-            text, status = "", 0
+            text: str = ""
+            status: int = 0
         else:
-            name, arguments = args[0], args[1:]
+            name: str = args[0]
+            arguments: list[str] = args[1:]
+
             if name.startswith(("/bin/", "/usr/bin/")):
                 name = posixpath.basename(name)
-            context = SSHCommandContext(" ".join(args), name, arguments, self.session, self.event_handler, stdin)
-            entry = registry.get(name)
-            status, lines = 0, []
+
+            context: SSHCommandContext = SSHCommandContext(" ".join(args), name, arguments, self.session, self.event_handler, stdin)
+            entry: CommandEntry | None = registry.get(name)
+            status = 0
+            lines: list[str] = []
+
             if entry:
                 lines = entry.fn(context) or []
                 status = context.status
@@ -215,6 +263,7 @@ class CommandHandler:
                 except ValueError:
                     status = 2
                     self.stderr += f"bash: exit: {arguments[0]}: numeric argument required\n"
+
                 self.closed = True
             elif name == "clear":
                 lines = ["\x1b[H\x1b[2J\x1b[3J"]
@@ -222,7 +271,11 @@ class CommandHandler:
                 lines = [f"{i:5}  {line}" for i, line in enumerate(self.session.history, 1)]
             elif name == "export":
                 for argument in arguments:
+                    key: str
+                    separator: str
+                    value: str
                     key, separator, value = argument.partition("=")
+
                     if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", key):
                         status = 1
                         self.stderr += f"bash: export: `{argument}': not a valid identifier\n"
@@ -238,16 +291,22 @@ class CommandHandler:
             else:
                 status = 127
                 self.stderr += f"bash: {name}: command not found\n"
+
             text = "\n".join(lines)
+
             if status and lines:
                 self.stderr += text + "\n"
                 text = ""
+
         self.session.last_status = status
+
         if destination is not None:
             try:
                 self.session.fs.write_file(destination, text + ("\n" if text else ""), self.session.cwd, append)
             except OSError as exc:
                 self.session.last_status = 1
                 self.stderr += f"bash: {destination}: {str(exc) or 'Permission denied'}\n"
+
             return ""
+
         return text

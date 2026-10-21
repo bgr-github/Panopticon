@@ -42,6 +42,8 @@ def ensure_host_key(path: Path) -> bool:
 
 
 def main() -> None:
+    """Creates or validates each configured SSH host key"""
+
     for path in settings.ssh.host_key_path:
         created = ensure_host_key(path)
         action = "Created" if created else "Kept existing"

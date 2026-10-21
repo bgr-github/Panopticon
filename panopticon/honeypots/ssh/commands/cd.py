@@ -4,11 +4,21 @@ NAME = "cd"
 
 
 def run(ctx: SSHCommandContext) -> list[str]:
+    """Changes the session working directory
+
+    Args:
+        ctx (SSHCommandContext): Context containing command arguments and session state
+
+    Returns:
+        list[str]: Lines of command output
+    """
+
     if len(ctx.args) > 1:
         ctx.status = 1
         return ["bash: cd: too many arguments"]
 
-    target = ctx.args[0] if ctx.args else ctx.session.home
+    target: str = ctx.args[0] if ctx.args else ctx.session.home
+
     if target == "-":
         if ctx.session.previous_cwd is None:
             ctx.status = 1
@@ -17,7 +27,7 @@ def run(ctx: SSHCommandContext) -> list[str]:
         target = ctx.session.previous_cwd
 
     try:
-        directory = ctx.session.fs.require_directory(
+        directory: str = ctx.session.fs.require_directory(
             target,
             cwd=ctx.session.cwd,
         )

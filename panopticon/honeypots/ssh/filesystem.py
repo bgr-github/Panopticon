@@ -15,7 +15,9 @@ class FakeFile:
 
 
 class FakeFileSystem:
-    def __init__(self):
+    def __init__(self) -> None:
+        """Creates the virtual Ubuntu directory tree and initial file contents"""
+
         self.entries: dict[str, FakeDirectory | FakeFile] = {
             "/": FakeDirectory(),
             "/home": FakeDirectory(),
@@ -26,14 +28,34 @@ class FakeFileSystem:
             "/var": FakeDirectory(),
             "/var/log": FakeDirectory(),
         }
+
         for path in (
-            "/root", "/tmp", "/var/tmp", "/usr", "/usr/bin", "/usr/sbin",
-            "/usr/lib", "/usr/local", "/usr/local/bin", "/bin", "/sbin",
-            "/dev", "/proc", "/sys", "/run", "/opt", "/srv", "/boot",
-            "/etc/ssh", "/etc/apt", "/var/www", "/var/www/html",
+            "/root",
+            "/tmp",
+            "/var/tmp",
+            "/usr",
+            "/usr/bin",
+            "/usr/sbin",
+            "/usr/lib",
+            "/usr/local",
+            "/usr/local/bin",
+            "/bin",
+            "/sbin",
+            "/dev",
+            "/proc",
+            "/sys",
+            "/run",
+            "/opt",
+            "/srv",
+            "/boot",
+            "/etc/ssh",
+            "/etc/apt",
+            "/var/www",
+            "/var/www/html",
         ):
             self.entries[path] = FakeDirectory()
-        files = {
+
+        files: dict[str, str] = {
             "/etc/os-release": OS_RELEASE,
             "/etc/lsb-release": 'DISTRIB_ID=Ubuntu\nDISTRIB_RELEASE=24.04\nDISTRIB_CODENAME=noble\nDISTRIB_DESCRIPTION="Ubuntu 24.04 LTS"\n',
             "/etc/issue": "Ubuntu 24.04 LTS \\n \\l\n\n",
@@ -54,10 +76,20 @@ class FakeFileSystem:
         del self.entries["/home/admin/readme.txt"]
 
     def add_user(self, username: str) -> str:
-        home = "/root" if username == "root" else f"/home/{username}"
+        """Creates the simulated account files and home directory
+
+        Args:
+            username (str): Sanitised username for the virtual account
+
+        Returns:
+            str: Absolute path of the account home directory
+        """
+
+        home: str = "/root" if username == "root" else f"/home/{username}"
         self.entries[home] = FakeDirectory()
         self.entries[home + "/.bashrc"] = FakeFile("# ~/.bashrc: executed by bash for non-login shells.\n")
         self.entries[home + "/.profile"] = FakeFile('# ~/.profile: executed by the command interpreter for login shells.\n')
+
         if username != "root":
             self.entries["/etc/passwd"] = FakeFile(
                 self.read_file("/etc/passwd") + f"{username}:x:1000:1000:,,,:{home}:/bin/bash\n"
@@ -65,19 +97,26 @@ class FakeFileSystem:
             self.entries["/etc/group"] = FakeFile(
                 self.read_file("/etc/group") + f"{username}:x:1000:\n"
             )
+
         return home
 
     def write_file(self, path: str, content: str, cwd: str, append: bool = False) -> None:
         """Write only to the bounded virtual filesystem, never the host."""
+        parent: str
+        name: str
         parent, name = posixpath.split(path)
-        directory = self.require_directory(parent or ".", cwd)
-        target = posixpath.join(directory, name)
+        directory: str = self.require_directory(parent or ".", cwd)
+        target: str = posixpath.join(directory, name)
+
         if not name or isinstance(self.entries.get(target), FakeDirectory):
             raise IsADirectoryError(target)
-        previous = self.entries.get(target)
-        value = (previous.content if append and isinstance(previous, FakeFile) else "") + content
+
+        previous: FakeDirectory | FakeFile | None = self.entries.get(target)
+        value: str = (previous.content if append and isinstance(previous, FakeFile) else "") + content
+
         if len(value) > 65536 or (target not in self.entries and len(self.entries) >= 1024):
             raise OSError("No space left on device")
+
         self.entries[target] = FakeFile(value)
 
     def resolve(self, path: str, cwd: str = "/") -> str:
@@ -87,10 +126,10 @@ class FakeFileSystem:
             raise FileNotFoundError(path)
 
         # Absolute paths start at root; relative paths start at cwd.
-        parts = [] if path.startswith("/") else [part for part in cwd.split("/") if part]
+        parts: list[str] = [] if path.startswith("/") else [part for part in cwd.split("/") if part]
 
         for component in path.split("/"):
-            current = "/" + "/".join(parts)
+            current: str = "/" + "/".join(parts)
 
             # You cannot traverse through a file.
             if not isinstance(self.entries[current], FakeDirectory):
@@ -102,6 +141,7 @@ class FakeFileSystem:
             if component == "..":
                 if parts:
                     parts.pop()
+
                 continue
 
             parts.append(component)
@@ -113,7 +153,17 @@ class FakeFileSystem:
         return "/" + "/".join(parts)
 
     def require_directory(self, path: str, cwd: str = "/") -> str:
-        resolved = self.resolve(path, cwd)
+        """Resolves a virtual path and checks it is a directory
+
+        Args:
+            path (str): Virtual path to resolve
+            cwd (str): Working directory used to resolve relative paths
+
+        Returns:
+            str: Absolute path of the directory
+        """
+
+        resolved: str = self.resolve(path, cwd)
 
         if not isinstance(self.entries[resolved], FakeDirectory):
             raise NotADirectoryError(resolved)
@@ -121,14 +171,24 @@ class FakeFileSystem:
         return resolved
 
     def list_directory(self, path: str = ".", cwd: str = "/") -> list[str]:
-        resolved = self.require_directory(path, cwd)
-        prefix = resolved.rstrip("/") + "/"
+        """Lists the immediate children of a virtual directory
 
-        children = []
+        Args:
+            path (str): Virtual path to resolve
+            cwd (str): Working directory used to resolve relative paths
+
+        Returns:
+            list[str]: Sorted names of entries in the directory
+        """
+
+        resolved: str = self.require_directory(path, cwd)
+        prefix: str = resolved.rstrip("/") + "/"
+
+        children: list[str] = []
 
         for entry_path in self.entries:
             if entry_path.startswith(prefix):
-                name = entry_path[len(prefix) :]
+                name: str = entry_path[len(prefix) :]
 
                 # Only immediate children, not their descendants.
                 if name and "/" not in name:
@@ -137,8 +197,18 @@ class FakeFileSystem:
         return sorted(children)
 
     def read_file(self, path: str, cwd: str = "/") -> str:
-        resolved = self.resolve(path, cwd)
-        entry = self.entries[resolved]
+        """Reads the contents of a virtual file
+
+        Args:
+            path (str): Virtual path to resolve
+            cwd (str): Working directory used to resolve relative paths
+
+        Returns:
+            str: Contents of the file
+        """
+
+        resolved: str = self.resolve(path, cwd)
+        entry: FakeDirectory | FakeFile = self.entries[resolved]
 
         if isinstance(entry, FakeDirectory):
             raise IsADirectoryError(resolved)

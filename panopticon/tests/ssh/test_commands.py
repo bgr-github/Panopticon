@@ -13,7 +13,9 @@ session = SSHSessionContext(
 )
 
 
-def test_echo_returns_words_on_one_line():
+def test_echo_returns_words_on_one_line() -> None:
+    """Checks that echo joins arguments on one output line"""
+
     channel = Mock()
     events = Mock(spec=EventHandler)
     handler = CommandHandler(channel, session, events)
@@ -23,7 +25,9 @@ def test_echo_returns_words_on_one_line():
     assert response == "hello world"
 
 
-def test_unknown_command_returns_correctly():
+def test_unknown_command_returns_correctly() -> None:
+    """Checks that unknown commands return an error and exit status 127"""
+
     channel = Mock()
     events = Mock(spec=EventHandler)
     handler = CommandHandler(channel, session, events)

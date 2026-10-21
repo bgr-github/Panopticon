@@ -25,6 +25,12 @@ class HoneypotServer(SSHServer):
     session: SSHSessionContext
 
     def __init__(self, event_handler: EventHandler) -> None:
+        """Initialises the SSH server with its event publisher
+
+        Args:
+            event_handler (EventHandler): Handler used to publish connection and authentication events
+        """
+
         self.event_handler = event_handler
 
     def connection_made(self, conn: SSHServerConnection) -> None:
@@ -143,6 +149,8 @@ class HoneypotServer(SSHServer):
 
 
 async def main() -> None:
+    """Starts the SSH honeypot and closes the listener when the service stops"""
+
     server: SSHAcceptor | None = None
 
     try:

@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import AsyncIterator
 from unittest.mock import Mock
 
 import asyncssh
@@ -11,7 +12,13 @@ from panopticon.honeypots.ssh.persona import SSH_VERSION
 
 
 @pytest_asyncio.fixture
-async def ssh_client():
+async def ssh_client() -> AsyncIterator[tuple[asyncssh.SSHClientConnection, Mock]]:
+    """Starts a temporary SSH server and connects a test client
+
+    Yields:
+        tuple[SSHClientConnection, Mock]: Connected client and mock event publisher
+    """
+
     events = Mock(spec=EventHandler)
     host_key = asyncssh.generate_private_key("ssh-ed25519")
 
@@ -35,12 +42,27 @@ async def ssh_client():
         yield connection, events
 
 
-async def read_prompt(shell):
+async def read_prompt(shell: asyncssh.SSHClientProcess[str]) -> str:
+    """Reads shell output until the next prompt is received
+
+    Args:
+        shell (SSHClientProcess[str]): Client process exposing the shell output stream
+
+    Returns:
+        str: Shell output including the prompt
+    """
+
     return await asyncio.wait_for(shell.stdout.readuntil("$ "), timeout=5)
 
 
 @pytest.mark.asyncio
-async def test_login_opens_shell(ssh_client):
+async def test_login_opens_shell(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks password authentication and the Ubuntu login prompt
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, events = ssh_client
 
     async with connection.create_process(term_type="xterm") as shell:
@@ -59,7 +81,13 @@ async def test_login_opens_shell(ssh_client):
 
 
 @pytest.mark.asyncio
-async def test_exec_has_output_status_and_event(ssh_client):
+async def test_exec_has_output_status_and_event(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks SSH command execution, server identity and command telemetry
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, events = ssh_client
     result = await asyncio.wait_for(connection.run("uname -s; whoami"), 5)
     assert result.stdout == "Linux\ntest-user\n"
@@ -72,7 +100,13 @@ async def test_exec_has_output_status_and_event(ssh_client):
 
 
 @pytest.mark.asyncio
-async def test_exec_failure_and_exit_status(ssh_client):
+async def test_exec_failure_and_exit_status(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks error output and exit statuses for SSH exec requests
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, _ = ssh_client
     result = await asyncio.wait_for(connection.run("missing-command"), 5)
     assert result.stdout == ""
@@ -83,7 +117,13 @@ async def test_exec_failure_and_exit_status(ssh_client):
 
 
 @pytest.mark.asyncio
-async def test_non_pty_shell_and_eof(ssh_client):
+async def test_non_pty_shell_and_eof(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks non-terminal input framing and processing at end of input
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, events = ssh_client
     async with connection.create_process() as shell:
         shell.stdin.write("echo one\npwd\nwhoami")
@@ -97,7 +137,13 @@ async def test_non_pty_shell_and_eof(ssh_client):
 
 
 @pytest.mark.asyncio
-async def test_channel_working_directories_are_independent(ssh_client):
+async def test_channel_working_directories_are_independent(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks that each channel starts in its own working directory
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, _ = ssh_client
     await asyncio.wait_for(connection.run("cd /tmp"), 5)
     result = await asyncio.wait_for(connection.run("pwd"), 5)
@@ -105,7 +151,13 @@ async def test_channel_working_directories_are_independent(ssh_client):
 
 
 @pytest.mark.asyncio
-async def test_interactive_commands_and_exit(ssh_client):
+async def test_interactive_commands_and_exit(ssh_client: tuple[asyncssh.SSHClientConnection, Mock]) -> None:
+    """Checks interactive directory changes and a clean shell exit
+
+    Args:
+        ssh_client (tuple[SSHClientConnection, Mock]): Connected client and mock event publisher
+    """
+
     connection, _ = ssh_client
     async with connection.create_process(term_type="xterm") as shell:
         await read_prompt(shell)
