@@ -1,6 +1,8 @@
 services:
   ssh:
-    build: .
+    build:
+      context: .
+      target: ssh
     environment:
       PANOPTICON_ENVIRONMENT: dev
       PANOPTICON_SSH__HOST: "0.0.0.0"
@@ -14,6 +16,26 @@ services:
       - ssh_keys:/app/keys
       - ssh_logs:/app/logs
       - ssh_data:/app/data
+
+  api:
+    build:
+      context: .
+      target: api
+    environment:
+      PANOPTICON_API__HOST: "0.0.0.0"
+      PANOPTICON_API__PORT: "8000"
+      PANOPTICON_DATABASE__PATH: "/app/data/panopticon.sqlite3"
+      PANOPTICON_LOGGING__LOG_DIR: "/app/logs"
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - ssh_data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3).close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   ssh_keys:

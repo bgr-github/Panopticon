@@ -1,6 +1,6 @@
 # Panopticon
 
-Panopticon is an SSH honeypot that simulates shell interactions and stores structured events in SQLite. An API and a dashboard are planned for the future.
+Panopticon is an SSH honeypot that simulates shell interactions, stores structured events in SQLite, and exposes a separate FastAPI service for historical queries and live event streaming. A React dashboard is planned.
 
 ## Quick Start
 
@@ -16,11 +16,13 @@ docker compose run --rm ssh python -m panopticon.init_keys
 docker compose up -d
 ```
 
+This starts separate `ssh` and `api` containers built from the Dockerfile's named targets. They share the `ssh_data` SQLite volume. SSH is available on `127.0.0.1:2222`; the API is available on `127.0.0.1:8000` with interactive documentation at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs).
+
 3. Test the server
 
 `ssh <username>@127.0.0.1 -p 2222`
 
-4. To shut down the server
+4. To shut down both services
 `docker compose down`
 
 ## Information
@@ -65,6 +67,73 @@ LIMIT 50;
 In Docker, the database lives at `/app/data/panopticon.sqlite3` in the `ssh_data` named volume. `docker compose down` preserves it; `docker compose down -v` removes the volumes and their collected data. Existing Redis configuration is accepted for compatibility but unused.
 
 SQLite uses WAL journalling and full commit synchronisation. Graceful shutdown closes SSH connections, records disconnect events and drains the writer. `EventHandler.publish()` accepts a snapshot into memory; it does not mean the event is committed yet. Queue overflow raises an error, and storage failures stop the writer and listening service rather than being reported as successful persistence. Pending events have no durable spool or automatic retry, so an abrupt crash or failed storage write can lose uncommitted events. Back up a running WAL database with SQLite's backup facility; copying only the main database file can omit recent commits.
+
+## Dashboard API
+
+Run the API locally in its own terminal, alongside the SSH service:
+
+```bash
+uv sync --locked
+uv run python -m panopticon.api.server
+```
+
+The API creates the shared schema on startup if needed and can start independently of SSH. Request handlers use read-only SQLite connections; the SSH collector remains the event writer. Both local services must use the same `PANOPTICON_DATABASE__PATH` and working directory. Database work runs outside the API's event loop. There are no REST endpoints that change or delete captured events.
+
+| Endpoint | Dashboard purpose |
+| --- | --- |
+| `GET /health` | Database readiness; returns 503 if queries fail |
+| `GET /events` | Newest-first event history with cursor pagination |
+| `GET /events/{event_id}` | Complete event payload |
+| `GET /events/stream` | Live committed events using SSE |
+| `GET /sessions` | Session summaries, counts and recorded lifecycle status |
+| `GET /sessions/{session_id}` | One session summary; query `/events?session_id=...` for its events |
+| `GET /stats/summary` | Event, session, source, login, command and transfer totals |
+| `GET /stats/timeline` | Zero-filled minute/hour/day activity buckets in UTC |
+| `GET /stats/top/{dimension}` | Ranked `src_ip`, `username`, `password` or `command` values |
+
+Event history, SSE and statistics accept `event_type`, `src_ip` (IPv4 or IPv6), `src_port`, `session_id`, `start_time` and `end_time`. Times must include a timezone; the start is inclusive and the end is exclusive. Invalid filters return 422. History pages have a `limit` of 1–500 (default 50) and a `before_id` cursor. Pass the response's `next_cursor` as `before_id` to load the next page; a null cursor means there are no more matching rows. Events with equal timestamps are ordered by ID for stable pagination.
+
+Session lists accept `limit`, `offset`, `src_ip` and `status=active|closed`. Summaries use complete recorded session histories. Active means an open event exists without a recorded close event; it is not an independent SSH process-health check, and abrupt crashes can leave sessions apparently active. Lists use descending last activity and session ID ordering. Offset pages can shift as live sessions change.
+
+Timeline queries default to the last 24 hours with `interval=hour`. Supply `start_time` and `end_time` for a fixed chart window. Queries exceeding 1,000 buckets return 422. Ranking queries use `limit=1..50` (default 10). All totals describe the selected stored events, and transfer counts remain simulated attempts rather than completed transfers.
+
+### Live stream and reconnects
+
+The API polls committed SQLite rows every 0.5 seconds by default, independently of the SSH process. SSE events use insertion order, so late-arriving events with older timestamps are still delivered. Each frame has `event: event`, an event UUID in `id`, and the full JSON payload in `data`. Idle streams emit keepalive comments every 15 seconds and advertise a two-second reconnect delay. Batches contain at most 100 events; slow clients do not require an unbounded per-client queue or a long-lived database transaction.
+
+A connection without a cursor starts at the current database tail. To bridge history and live data without a gap, fetch `/events`, then connect with its `stream_cursor` as `after_id`. The value `0` represents an empty database snapshot. Reconnecting clients can send `Last-Event-ID`, which takes precedence over the query cursor and resumes exclusively after the last received event. Clients should deduplicate by event UUID across reconnections. Unknown/expired cursors return 404; fetch history again to obtain a fresh cursor.
+
+```javascript
+const api = "http://127.0.0.1:8000";
+const history = await fetch(`${api}/events?limit=50`).then(response => response.json());
+const stream = new EventSource(`${api}/events/stream?after_id=${encodeURIComponent(history.stream_cursor)}`);
+
+stream.addEventListener("event", message => {
+    const event = JSON.parse(message.data);
+    // Insert or update the dashboard event using event.id.
+});
+
+stream.addEventListener("stream_error", message => {
+    // Storage became unavailable after streaming started; reconnect or refresh history.
+    console.error(JSON.parse(message.data).detail);
+});
+
+// Call stream.close() when the dashboard unmounts.
+```
+
+Apply the same event filters to the history request and stream. The stream follows the append-only event table; future retention/deletion features will need their own cursor policy. Data is emitted only after a database commit, so events still queued by the collector are not visible yet. Database failures before streaming starts return 503; failures after response headers emit `stream_error` and close the stream.
+
+CORS permits `http://localhost:5173` and `http://127.0.0.1:5173` by default. Configure the API with:
+
+```dotenv
+PANOPTICON_API__HOST=127.0.0.1
+PANOPTICON_API__PORT=8000
+PANOPTICON_API__CORS_ORIGINS='["http://localhost:5173","http://127.0.0.1:5173"]'
+PANOPTICON_API__POLL_INTERVAL=0.5
+PANOPTICON_API__HEARTBEAT_INTERVAL=15
+```
+
+Docker publishes the API only on the host loopback interface. It currently has no authentication and exposes captured credentials and commands; keep it restricted to operator access until authentication is added. CORS is a browser-origin policy, not an access-control boundary.
 
 ## File transfer attempts
 

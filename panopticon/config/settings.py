@@ -29,6 +29,14 @@ class DatabaseSettings(BaseModel):
     queue_capacity: int = Field(default=1000, ge=1)
 
 
+class APISettings(BaseModel):
+    host: str = "127.0.0.1"
+    port: int = Field(default=8000, ge=1, le=65535)
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "http://127.0.0.1:5173"])
+    poll_interval: float = Field(default=0.5, gt=0, le=60)
+    heartbeat_interval: float = Field(default=15.0, gt=0, le=60)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="PANOPTICON_",
@@ -44,6 +52,7 @@ class Settings(BaseSettings):
     ssh: SSHHoneypotSettings = Field(default_factory=SSHHoneypotSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
+    api: APISettings = Field(default_factory=APISettings)
     # Retained so existing .env files remain valid; SQLite does not use Redis.
     redis: RedisSettings = Field(default_factory=RedisSettings)
 

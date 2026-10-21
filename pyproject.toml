@@ -5,12 +5,15 @@ description = "SSH honeypot that captures structured interaction events."
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "asyncssh>=2,<3",
+    "fastapi>=0.115,<1",
     "pydantic>=2,<3",
-    "pydantic-settings>=2,<3"
+    "pydantic-settings>=2,<3",
+    "uvicorn>=0.30,<1",
 ]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.27,<1",
     "pytest",
     "pytest-asyncio",
 ]

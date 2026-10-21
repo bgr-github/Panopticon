@@ -11,11 +11,11 @@ flowchart LR
     Writer --> Store[EventStore interface]
     Store --> SQLite[SQLiteEventStore]
     SQLite --> DB[(SQLite database)]
-    DB -. Planned historical queries .-> API[FastAPI service]
-    API -. Planned responses .-> UI[React dashboard]
+    DB -- Read-only queries and committed event polling --> API[FastAPI service]
+    API -- REST and SSE --> UI[Planned React dashboard]
 ```
 
-The collector depends on a small storage protocol. SQLite owns schema creation, parameterised inserts and indexes. Blocking storage operations run in a background thread, and the SSH service shares one collector across connections. FastAPI, React and the controller remain planned.
+The collector depends on a small storage protocol. SQLite owns schema creation, parameterised inserts and indexes. Blocking storage operations run in a background thread, and the SSH service shares one collector across connections. FastAPI runs as a separate service; React and the controller remain planned.
 
 ### Services
 | Service          | Purpose                                                                                                      |
@@ -27,20 +27,12 @@ The collector depends on a small storage protocol. SQLite owns schema creation, 
 | SSH Honeypot     | Simulate SSH interactions and produce connection, authentication, and command events.                        |
 
 ## API
-### Endpoints
-`GET /events` -- Shows a list of events in a newest-first order
 
-| Parameter  | Type      | Proposed Behaviour                                           |
-| ---------- | --------- | ------------------------------------------------------------ |
-| limit      | int       | Default `50`, minimum `1`, maximum `500`.                    |
-| event_type | EventType | One of the supported event types. Invalid values return 422. |
-| src_ip     | string    | Exact IPv4 address match.                                    |
-| src_port   | int       | Exact source-port match, from `0` to `65535`.                |
-| session_id | string    | Exact session ID match.                                      |
-| start_time | datetime  | Include events at or after this timestamp                    |
-| end_time   | datetime  | Include events before this timestamp.                        |
+The independently runnable FastAPI service provides event history/detail, session summaries, dashboard totals, activity timelines and ranked source/credential/command values. `/events/stream` supplies SSE from committed database rows with event UUID resume cursors and idle keepalives. See README.md and the generated `/docs` for endpoint contracts and filter limits.
 
-`GET /events/stream` -- Live events stream using Server-Sent Events.
+API routes depend on an `EventReader` protocol. `SQLiteEventReader` supplies parameterised, read-only queries using operation-scoped connections. Both services initialise the same schema on startup, share the SQLite volume, and remain independently runnable. Redis is not required.
+
+The Dockerfile has shared runtime dependencies with separate `ssh` and `api` targets. Compose starts one container per service; API ports are published on loopback. The API is currently intended for local operator access and has no authentication.
 
 ## Reliability
 
@@ -51,6 +43,7 @@ The collector depends on a small storage protocol. SQLite owns schema creation, 
 - The SSH listener starts only after database initialisation succeeds.
 - Graceful shutdown closes active SSH connections before draining the collector.
 - Queue overflow is logged and raised to the publisher. A writer failure propagates to the service and stops collection.
+- SSE reads insertion order and resumes from committed event UUIDs, independently of event timestamps. History pages return a snapshot cursor for a gapless handoff to the live stream.
 - The bounded queue is not durable. Uncommitted events can be lost after an abrupt process crash or storage failure; there is no automatic retry or dead-letter store.
 
 ## Stack
@@ -60,7 +53,7 @@ The collector depends on a small storage protocol. SQLite owns schema creation, 
 - Pydantic for event validation and serialisation
 - AsyncIO with blocking storage work delegated to a thread
 - AsyncSSH for the asynchronous SSH server
-- FastAPI planned for historical queries and dashboard access
+- FastAPI and Uvicorn for historical queries, statistics and SSE
 
 **Frontend:**
 - React dashboard planned
