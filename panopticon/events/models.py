@@ -47,3 +47,17 @@ class LoginAttempt(BaseEvent):
 class Command(BaseEvent):
     event_type: EventType = EventType.command
     input: str
+
+
+class FileDownload(BaseEvent):
+    event_type: EventType = EventType.command
+    url: str
+    filename: str
+    filetype: str
+
+
+class FileUpload(BaseEvent):
+    event_type: EventType = EventType.command
+    url: str
+    filename: str
+    filetype: str
