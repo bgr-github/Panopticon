@@ -150,7 +150,7 @@ class CommandHandler:
                 data: str = ""
 
                 for stage in stages:
-                    data = self._execute(stage, data + ("\n" if data else ""))
+                    data = self._execute(stage, data + ("\n" if data else ""), command)
 
                     if self.closed:
                         break
@@ -195,12 +195,13 @@ class CommandHandler:
             token,
         )
 
-    def _execute(self, tokens: list[str], stdin: str) -> str:
+    def _execute(self, tokens: list[str], stdin: str, raw_input: str) -> str:
         """Runs one simulated command with virtual input and output redirection
 
         Args:
             tokens (list[str]): Tokens belonging to the command
             stdin (str): Input supplied by the previous pipeline stage
+            raw_input (str): Original command line retained for event metadata
 
         Returns:
             str: Command output before the terminal newline
@@ -249,7 +250,7 @@ class CommandHandler:
             if name.startswith(("/bin/", "/usr/bin/")):
                 name = posixpath.basename(name)
 
-            context: SSHCommandContext = SSHCommandContext(" ".join(args), name, arguments, self.session, self.event_handler, stdin)
+            context: SSHCommandContext = SSHCommandContext(raw_input, name, arguments, self.session, self.event_handler, stdin)
             entry: CommandEntry | None = registry.get(name)
             status = 0
             lines: list[str] = []

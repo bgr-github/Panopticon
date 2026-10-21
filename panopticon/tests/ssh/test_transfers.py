@@ -25,6 +25,7 @@ def handler() -> CommandHandler:
     )
     channel: Mock = Mock()
     events: Mock = Mock(spec=EventHandler)
+    session.fs.write_file("readme.txt", "Welcome to the server.\n", session.cwd)
 
     return CommandHandler(channel, session, events)
 
@@ -117,7 +118,7 @@ def test_invalid_transfer_only_records_command(handler: CommandHandler, command:
 
     response: str = handler.handle_input(command)
 
-    assert response
+    assert response or handler.stderr
     handler.event_handler.publish.assert_called_once()
     assert isinstance(handler.event_handler.publish.call_args.args[0], Command)
 

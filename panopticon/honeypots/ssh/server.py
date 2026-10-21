@@ -38,13 +38,6 @@ class HoneypotServer(SSHServer):
             connections (set[SSHServerConnection] | None): Active connections tracked for shutdown
         """
 
-    def __init__(self, event_handler: EventHandler) -> None:
-        """Initialises the SSH server with its event publisher
-
-        Args:
-            event_handler (EventHandler): Handler used to publish connection and authentication events
-        """
-
         self.event_handler = event_handler
         self.connections = connections
 
@@ -204,7 +197,18 @@ async def main() -> None:
     finally:
         if server is not None:
             server.close()
+
+        active_connections: tuple[SSHServerConnection, ...] = tuple(connections)
+
+        for connection in active_connections:
+            connection.close()
+
+        await asyncio.gather(*(connection.wait_closed() for connection in active_connections))
+
+        if server is not None:
             await server.wait_closed()
+
+        await event_handler.close()
 
 
 if __name__ == "__main__":
