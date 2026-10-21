@@ -1,11 +1,11 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, RedisDsn
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class SSHHoneypotSettings(BaseModel):
+class SSHHoneypotSettings(BaseSettings):
     host: str = "127.0.0.1"
     port: int = Field(default=2222, ge=1, le=65535)
     host_key_path: list[Path] = Field(
@@ -14,9 +14,13 @@ class SSHHoneypotSettings(BaseModel):
     )
 
 
-class LoggingSettings(BaseModel):
+class LoggingSettings(BaseSettings):
     log_dir: Path = Path("logs")
     format: str = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+
+
+class RedisSettings(BaseSettings):
+    dsn: RedisDsn = RedisDsn("redis://localhost:6379/0")
 
 
 class Settings(BaseSettings):
@@ -33,6 +37,7 @@ class Settings(BaseSettings):
 
     ssh: SSHHoneypotSettings = Field(default_factory=SSHHoneypotSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+    redis: RedisSettings = Field(default_factory=RedisSettings)
 
 
 settings = Settings()

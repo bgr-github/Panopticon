@@ -6,7 +6,13 @@ import pytest
 from panopticon.init_keys import ensure_host_key
 
 
-def test_missing_key_is_created(tmp_path: Path):
+def test_missing_key_is_created(tmp_path: Path) -> None:
+    """Checks that a missing host key is created and can be read
+
+    Args:
+        tmp_path (Path): Temporary directory provided by pytest
+    """
+
     path = tmp_path / "keys" / "ssh_host_key"
 
     created = ensure_host_key(path)
@@ -19,7 +25,13 @@ def test_missing_key_is_created(tmp_path: Path):
     assert key.get_algorithm() == "ssh-ed25519"
 
 
-def test_existing_key_is_preserved(tmp_path: Path):
+def test_existing_key_is_preserved(tmp_path: Path) -> None:
+    """Checks that an existing host key is preserved
+
+    Args:
+        tmp_path (Path): Temporary directory provided by pytest
+    """
+
     path = tmp_path / "ssh_host_key"
     ensure_host_key(path)
     original_contents = path.read_bytes()
@@ -30,7 +42,13 @@ def test_existing_key_is_preserved(tmp_path: Path):
     assert path.read_bytes() == original_contents
 
 
-def test_invalid_existing_key_is_not_replaced(tmp_path: Path):
+def test_invalid_existing_key_is_not_replaced(tmp_path: Path) -> None:
+    """Checks that an invalid host key is rejected without replacement
+
+    Args:
+        tmp_path (Path): Temporary directory provided by pytest
+    """
+
     path = tmp_path / "ssh_host_key"
     original_contents = b"this is not an SSH private key"
     path.write_bytes(original_contents)

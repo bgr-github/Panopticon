@@ -2,6 +2,7 @@ import asyncio
 import logging
 import sys
 import time
+from dataclasses import replace
 from uuid import uuid4
 
 from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_server
@@ -10,6 +11,7 @@ from panopticon.config.settings import settings
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionClosed, ConnectionOpen, LoginAttempt
 from panopticon.honeypots.ssh.context import SSHSessionContext
+from panopticon.honeypots.ssh.persona import SSH_VERSION
 from panopticon.honeypots.ssh.shell import ShellSession
 from panopticon.observability.logger import configure_logging
 
@@ -23,6 +25,12 @@ class HoneypotServer(SSHServer):
     session: SSHSessionContext
 
     def __init__(self, event_handler: EventHandler) -> None:
+        """Initialises the SSH server with its event publisher
+
+        Args:
+            event_handler (EventHandler): Handler used to publish connection and authentication events
+        """
+
         self.event_handler = event_handler
 
     def connection_made(self, conn: SSHServerConnection) -> None:
@@ -35,7 +43,7 @@ class HoneypotServer(SSHServer):
         self.conn = conn
 
         self.session = SSHSessionContext(
-            id=uuid4().hex[:8],
+            id=uuid4().hex,
             src_ip=conn.get_extra_info("peername")[0],
             src_port=conn.get_extra_info("peername")[1],
             start_time=time.monotonic(),
@@ -78,7 +86,7 @@ class HoneypotServer(SSHServer):
             bool: Whether the client is successful or not.
         """
 
-        self.session.username = username
+        self.session.initialise_user(username)
 
         return True
 
@@ -127,10 +135,22 @@ class HoneypotServer(SSHServer):
             ShellSession: Client's session as an object.
         """
 
-        return ShellSession(self.event_handler, self.session)
+        return ShellSession(
+            self.event_handler,
+            replace(
+                self.session,
+                environment=dict(self.session.environment),
+                history=[],
+                cwd=self.session.home,
+                previous_cwd=None,
+                last_status=0,
+            ),
+        )
 
 
 async def main() -> None:
+    """Starts the SSH honeypot and closes the listener when the service stops"""
+
     server: SSHAcceptor | None = None
 
     try:
@@ -139,6 +159,9 @@ async def main() -> None:
             host=settings.ssh.host,
             port=settings.ssh.port,
             server_host_keys=settings.ssh.host_key_path,
+            server_version=SSH_VERSION,
+            max_line_length=16384,
+            login_timeout=30,
         )
 
         logger.info(f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
@@ -155,6 +178,7 @@ async def main() -> None:
     finally:
         if server is not None:
             server.close()
+            await server.wait_closed()
 
 
 if __name__ == "__main__":
