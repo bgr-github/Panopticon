@@ -7,29 +7,15 @@ services:
       PANOPTICON_SSH__PORT: "2222"
       PANOPTICON_SSH__HOST_KEY_PATH: '["/app/keys/ssh_host_key"]'
       PANOPTICON_LOGGING__LOG_DIR: "/app/logs"
+      PANOPTICON_DATABASE__PATH: "/app/data/panopticon.sqlite3"
     ports:
       - "127.0.0.1:2222:2222"
     volumes:
       - ssh_keys:/app/keys
       - ssh_logs:/app/logs
-  redis:
-    image: redis:8
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --appendfsync
-      - everysec
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 5
-      start_period: 5s
+      - ssh_data:/app/data
 
 volumes:
   ssh_keys:
   ssh_logs:
-  redis_data:
+  ssh_data:

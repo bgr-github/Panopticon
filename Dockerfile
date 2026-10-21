@@ -16,8 +16,8 @@ RUN uv sync --locked --no-dev --no-editable
 
 RUN groupadd --gid 10001 panopticon \
     && useradd --uid 10001 --gid panopticon --no-create-home panopticon \
-    && mkdir -p /app/keys /app/logs \
-    && chown panopticon:panopticon /app/keys /app/logs
+    && mkdir -p /app/keys /app/logs /app/data \
+    && chown panopticon:panopticon /app/keys /app/logs /app/data
 
 USER panopticon
 

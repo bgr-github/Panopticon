@@ -9,6 +9,7 @@ from asyncssh import Error, SSHAcceptor, SSHServer, SSHServerConnection, create_
 from panopticon.config.settings import settings
 from panopticon.events.event_handler import EventHandler
 from panopticon.events.models import ConnectionClosed, ConnectionOpen, LoginAttempt
+from panopticon.events.sqlite_store import SQLiteEventStore
 from panopticon.honeypots.ssh.context import SSHSessionContext
 from panopticon.honeypots.ssh.shell import ShellSession
 from panopticon.observability.logger import configure_logging
@@ -21,9 +22,22 @@ class HoneypotServer(SSHServer):
     conn: SSHServerConnection
     event_handler: EventHandler
     session: SSHSessionContext
+    connections: set[SSHServerConnection] | None
 
-    def __init__(self, event_handler: EventHandler) -> None:
+    def __init__(
+        self,
+        event_handler: EventHandler,
+        connections: set[SSHServerConnection] | None = None,
+    ) -> None:
+        """Initialises the SSH server with a shared collector and connection tracker
+
+        Args:
+            event_handler (EventHandler): Collector used to publish SSH events
+            connections (set[SSHServerConnection] | None): Active connections tracked for shutdown
+        """
+
         self.event_handler = event_handler
+        self.connections = connections
 
     def connection_made(self, conn: SSHServerConnection) -> None:
         """Callback made when a client tries to initially connect to the server.
@@ -33,6 +47,9 @@ class HoneypotServer(SSHServer):
         """
 
         self.conn = conn
+
+        if self.connections is not None:
+            self.connections.add(conn)
 
         self.session = SSHSessionContext(
             id=uuid4().hex[:8],
@@ -55,6 +72,9 @@ class HoneypotServer(SSHServer):
         Args:
             exc (Optional[Exception]): None if connection closes cleanly.
         """
+
+        if self.connections is not None:
+            self.connections.discard(self.conn)
 
         if self.session:
             self.event_handler.publish(
@@ -131,11 +151,18 @@ class HoneypotServer(SSHServer):
 
 
 async def main() -> None:
+    """Runs the SSH service and drains collected events after connections close"""
+
     server: SSHAcceptor | None = None
+    connections: set[SSHServerConnection] = set()
+    store: SQLiteEventStore = SQLiteEventStore(settings.database.path, settings.database.timeout)
+    event_handler: EventHandler = EventHandler(store, settings.database.queue_capacity)
 
     try:
+        await event_handler.start()
+
         server = await create_server(
-            server_factory=lambda: HoneypotServer(EventHandler()),
+            server_factory=lambda: HoneypotServer(event_handler, connections),
             host=settings.ssh.host,
             port=settings.ssh.port,
             server_host_keys=settings.ssh.host_key_path,
@@ -143,7 +170,7 @@ async def main() -> None:
 
         logger.info(f"Server listening on {settings.ssh.host}:{settings.ssh.port}...")
 
-        await asyncio.Future()
+        await event_handler.wait()
     except asyncio.CancelledError:
         raise
     except Error as e:
@@ -155,6 +182,15 @@ async def main() -> None:
     finally:
         if server is not None:
             server.close()
+            await server.wait_closed()
+
+        active_connections: tuple[SSHServerConnection, ...] = tuple(connections)
+
+        for connection in active_connections:
+            connection.close()
+
+        await asyncio.gather(*(connection.wait_closed() for connection in active_connections))
+        await event_handler.close()
 
 
 if __name__ == "__main__":

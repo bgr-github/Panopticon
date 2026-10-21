@@ -1,6 +1,7 @@
 import importlib
 import logging
 import pkgutil
+import shlex
 
 from asyncssh import SSHServerChannel
 
@@ -60,11 +61,23 @@ class CommandHandler:
             str: Returns a command response
         """
 
-        parts = command.split()
-
-        # Empty input
-        if not parts:
+        if not command.strip():
             return ""
+
+        self.event_handler.publish(
+            Command(
+                session_id=self.session.id,
+                src_ip=self.session.src_ip,
+                src_port=self.session.src_port,
+                input=command,
+            )
+        )
+
+        try:
+            parts: list[str] = shlex.split(command)
+
+        except ValueError as exc:
+            return f"bash: {exc}"
 
         name: str = parts[0]
         args: list[str] = parts[1:]
@@ -88,15 +101,6 @@ class CommandHandler:
                 output = ["exit_gracefully"]
             else:
                 output = [f"bash: {name}: command not found"]
-
-        self.event_handler.publish(
-            Command(
-                session_id=self.session.id,
-                src_ip=self.session.src_ip,
-                src_port=self.session.src_port,
-                input=command,
-            )
-        )
 
         if entry is not None:
             output = entry.fn(context) or []
