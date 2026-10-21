@@ -1,6 +1,9 @@
 import importlib
 import logging
 import pkgutil
+import posixpath
+import re
+import shlex
 
 from asyncssh import SSHServerChannel
 
@@ -31,7 +34,10 @@ def load_commands() -> dict[str, CommandEntry]:
         name: str = getattr(module, "NAME", module_name)
         man: str | None = getattr(module, "MAN", None)
 
-        _registry[name] = CommandEntry(name=name, man=man, fn=run)
+        for alias in getattr(module, "NAMES", (name,)):
+            if alias in _registry:
+                raise ValueError(f"Duplicate command: {alias}")
+            _registry[alias] = CommandEntry(name=alias, man=man, fn=run)
 
     return _registry
 
@@ -50,44 +56,15 @@ class CommandHandler:
         self.session = session
         self.event_handler = event_handler
 
+    closed: bool = False
+    stderr: str = ""
+
     def handle_input(self, command: str) -> str:
-        """Parses input passed into the command handler
+        """Interpret a bounded shell subset. Never invoke a host executable."""
+        self.stderr = ""
 
-        Args:
-            command (str): Client input from shell
-
-        Returns:
-            str: Returns a command response
-        """
-
-        parts = command.split()
-
-        # Empty input
-        if not parts:
+        if not command.strip():
             return ""
-
-        name: str = parts[0]
-        args: list[str] = parts[1:]
-
-        context: SSHCommandContext = SSHCommandContext(
-            input=command,
-            name=name,
-            args=args,
-            session=self.session,
-            event_handler=self.event_handler,
-        )
-
-        output: list[str] = []
-        entry: CommandEntry | None = registry.get(name, None)
-
-        if entry is None:
-            if name == "help":
-                output = ["Available Commands:"]
-                output.extend(f"  {command_name}" for command_name in sorted(registry))
-            elif name == "exit":
-                output = ["exit_gracefully"]
-            else:
-                output = [f"bash: {name}: command not found"]
 
         self.event_handler.publish(
             Command(
@@ -98,11 +75,179 @@ class CommandHandler:
             )
         )
 
-        if entry is not None:
-            output = entry.fn(context) or []
+        self.session.history.append(command)
+        self.session.history[:] = self.session.history[-100:]
 
-        if output == ["exit_gracefully"]:
-            self.chan.close()
+        try:
+            lexer = shlex.shlex(command, posix=False, punctuation_chars=";&|<>()")
+            lexer.whitespace_split = True
+            tokens = list(lexer)
 
-        # terminal friendly line output
-        return "\r\n".join(output)
+            if any(token in ("&", "(", ")", "<<") or token.startswith("`") for token in tokens):
+                raise ValueError("unsupported shell syntax")
+
+            # Build a list of pipelines joined by ;, && and ||.
+            groups, current, connector = [], [], ";"
+
+            for token in tokens:
+                if token in (";", "&&", "||"):
+
+                    if not current:
+                        raise ValueError("unexpected token")
+
+                    groups.append((connector, current))
+                    current, connector = [], token
+                else:
+                    current.append(token)
+
+            if current:
+                groups.append((connector, current))
+
+            elif connector != ";":
+                raise ValueError("unexpected end of file")
+
+            output = []
+
+            for connector, group in groups:
+                if self.closed:
+                    break
+
+                if connector == "&&" and self.session.last_status != 0:
+                    continue
+
+                if connector == "||" and self.session.last_status == 0:
+                    continue
+
+                stages, stage = [], []
+
+                for token in group:
+                    if token == "|":
+                        if not stage:
+                            raise ValueError("unexpected token `|' ")
+
+                        stages.append(stage)
+                        stage = []
+                    else:
+                        stage.append(token)
+
+                if not stage:
+                    raise ValueError("unexpected end of file")
+
+                stages.append(stage)
+                data = ""
+
+                for stage in stages:
+                    data = self._execute(stage, data + ("\n" if data else ""))
+
+                    if self.closed:
+                        break
+                if data:
+                    output.append(data)
+
+            return "\n".join(output)
+
+        except ValueError as exc:
+            self.session.last_status = 2
+            self.stderr += f"bash: syntax error: {exc}\n"
+
+            return ""
+
+    def _expand(self, token: str) -> str:
+
+        if token.startswith("'") and token.endswith("'"):
+            return token[1:-1]
+
+        quoted = token.startswith('"') and token.endswith('"')
+
+        if quoted:
+            token = token[1:-1]
+
+        elif token == "~" or token.startswith("~/"):
+            token = self.session.home + token[1:]
+
+        env = {**self.session.environment, "PWD": self.session.cwd, "?": str(self.session.last_status)}
+
+        return re.sub(
+            r"\$(?:\{([A-Za-z_][A-Za-z_0-9]*|\?)\}|([A-Za-z_][A-Za-z_0-9]*|\?))",
+            lambda match: env.get(match[1] or match[2], ""),
+            token,
+        )
+
+    def _execute(self, tokens: list[str], stdin: str) -> str:
+        args, destination, append = [], None, False
+        index = 0
+        while index < len(tokens):
+            token = tokens[index]
+            if token in (">", ">>", "<"):
+                if index + 1 >= len(tokens) or tokens[index + 1] in (">", ">>", "<"):
+                    raise ValueError("unexpected end of file")
+                target = self._expand(tokens[index + 1])
+                if token == "<":
+                    try:
+                        stdin = self.session.fs.read_file(target, self.session.cwd)
+                    except OSError:
+                        self.session.last_status = 1
+                        self.stderr += f"bash: {target}: No such file or directory\n"
+                        return ""
+                else:
+                    destination, append = target, token == ">>"
+                index += 2
+                continue
+            if token in ("&", "(", ")"):
+                raise ValueError("unsupported shell syntax")
+            args.append(self._expand(token))
+            index += 1
+        if not args:
+            text, status = "", 0
+        else:
+            name, arguments = args[0], args[1:]
+            if name.startswith(("/bin/", "/usr/bin/")):
+                name = posixpath.basename(name)
+            context = SSHCommandContext(" ".join(args), name, arguments, self.session, self.event_handler, stdin)
+            entry = registry.get(name)
+            status, lines = 0, []
+            if entry:
+                lines = entry.fn(context) or []
+                status = context.status
+            elif name in ("exit", "logout"):
+                try:
+                    status = int(arguments[0]) % 256 if arguments else self.session.last_status
+                except ValueError:
+                    status = 2
+                    self.stderr += f"bash: exit: {arguments[0]}: numeric argument required\n"
+                self.closed = True
+            elif name == "clear":
+                lines = ["\x1b[H\x1b[2J\x1b[3J"]
+            elif name == "history":
+                lines = [f"{i:5}  {line}" for i, line in enumerate(self.session.history, 1)]
+            elif name == "export":
+                for argument in arguments:
+                    key, separator, value = argument.partition("=")
+                    if not re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", key):
+                        status = 1
+                        self.stderr += f"bash: export: `{argument}': not a valid identifier\n"
+                    elif separator:
+                        self.session.environment[key] = value
+            elif name == "help":
+                lines = [
+                    "GNU bash, version 5.2.21(1)-release (x86_64-pc-linux-gnu)",
+                    "These shell commands are defined internally. Type `help' to see this list.",
+                    " cd [dir]    echo [arg ...]    exit [n]    export [name[=value] ...]",
+                    " history     pwd              true        false",
+                ]
+            else:
+                status = 127
+                self.stderr += f"bash: {name}: command not found\n"
+            text = "\n".join(lines)
+            if status and lines:
+                self.stderr += text + "\n"
+                text = ""
+        self.session.last_status = status
+        if destination is not None:
+            try:
+                self.session.fs.write_file(destination, text + ("\n" if text else ""), self.session.cwd, append)
+            except OSError as exc:
+                self.session.last_status = 1
+                self.stderr += f"bash: {destination}: {str(exc) or 'Permission denied'}\n"
+            return ""
+        return text

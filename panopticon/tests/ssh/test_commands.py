@@ -30,4 +30,6 @@ def test_unknown_command_returns_correctly():
 
     value = handler.handle_input("TestCommand")
 
-    assert value == "bash: TestCommand: command not found"
+    assert value == ""
+    assert handler.stderr == "bash: TestCommand: command not found\n"
+    assert session.last_status == 127

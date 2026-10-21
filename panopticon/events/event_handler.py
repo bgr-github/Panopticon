@@ -9,5 +9,4 @@ class EventHandler:
         Args:
             event (BaseEvent): Event to be published.
         """
-        # TODO: This will publish to Redis stream
         print(event.model_dump_json())
